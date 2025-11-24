@@ -23,27 +23,7 @@ ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/ai_engine.log');
 
 // ============================================================================
-// CONFIGURATION
-// ============================================================================
-
-define('AI_DATA_DIR', __DIR__ . '/ai_data');
-define('AI_CONVERSATIONS_DIR', AI_DATA_DIR . '/conversations');
-
-// Load environment variables
-$GEMINI_API_KEY = getenv('GOOGLE_GEMINI_API_KEY');
-$GOOGLE_IMAGEN_API_KEY = getenv('GOOGLE_IMAGEN_API_KEY');
-$HUGGINGFACE_API_KEY = getenv('HUGGINGFACE_API_KEY');
-
-// Ensure directories exist
-if (!file_exists(AI_DATA_DIR)) {
-    mkdir(AI_DATA_DIR, 0777, true);
-}
-if (!file_exists(AI_CONVERSATIONS_DIR)) {
-    mkdir(AI_CONVERSATIONS_DIR, 0777, true);
-}
-
-// ============================================================================
-// UTILITY FUNCTIONS
+// UTILITY FUNCTIONS (DEFINED FIRST - NO DEPENDENCIES)
 // ============================================================================
 
 function aiLog($message) {
@@ -65,7 +45,8 @@ function aiLoadJSON($file) {
         $content = stream_get_contents($fp);
         flock($fp, LOCK_UN);
         fclose($fp);
-        return json_decode($content, true) ?: [];
+        $decoded = json_decode($content, true);
+        return is_array($decoded) ? $decoded : [];
     }
     
     fclose($fp);
@@ -81,7 +62,15 @@ function aiSaveJSON($file, $data) {
     
     if (flock($fp, LOCK_EX)) {
         ftruncate($fp, 0);
-        fwrite($fp, json_encode($data, JSON_PRETTY_PRINT));
+        rewind($fp);
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        if ($json === false) {
+            aiLog("ERROR: JSON encoding failed for $file");
+            flock($fp, LOCK_UN);
+            fclose($fp);
+            return false;
+        }
+        fwrite($fp, $json);
         fflush($fp);
         flock($fp, LOCK_UN);
         fclose($fp);
@@ -92,11 +81,50 @@ function aiSaveJSON($file, $data) {
     return false;
 }
 
+function aiMatchesIntent($text, $keywords) {
+    foreach ($keywords as $keyword) {
+        if (strpos($text, strtolower($keyword)) !== false) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// ============================================================================
+// CONFIGURATION (NOW SAFE TO USE aiLog)
+// ============================================================================
+
+define('AI_DATA_DIR', __DIR__ . '/ai_data');
+define('AI_CONVERSATIONS_DIR', AI_DATA_DIR . '/conversations');
+
+// Load environment variables
+$GEMINI_API_KEY = getenv('GOOGLE_GEMINI_API_KEY');
+$GOOGLE_IMAGEN_API_KEY = getenv('GOOGLE_IMAGEN_API_KEY');
+$HUGGINGFACE_API_KEY = getenv('HUGGINGFACE_API_KEY');
+
+aiLog("🚀 AI Engine Initialized");
+aiLog("✅ Primary Gemini Key: " . (!empty($GEMINI_API_KEY) ? "SET" : "NOT SET"));
+aiLog("✅ Fallback Gemini Key: " . (!empty($GOOGLE_IMAGEN_API_KEY) ? "SET" : "NOT SET"));
+aiLog("✅ HuggingFace Key: " . (!empty($HUGGINGFACE_API_KEY) ? "SET" : "NOT SET"));
+
+// Ensure directories exist with proper permissions
+if (!file_exists(AI_DATA_DIR)) {
+    @mkdir(AI_DATA_DIR, 0755, true);
+}
+if (!file_exists(AI_CONVERSATIONS_DIR)) {
+    @mkdir(AI_CONVERSATIONS_DIR, 0755, true);
+}
+
 // ============================================================================
 // CONVERSATION HISTORY MANAGEMENT
 // ============================================================================
 
 function getConversationFile($userId) {
+    // Sanitize userId to prevent directory traversal
+    $userId = preg_replace('/[^a-zA-Z0-9_-]/', '_', (string)$userId);
+    if (empty($userId)) {
+        $userId = 'unknown';
+    }
     return AI_CONVERSATIONS_DIR . '/' . $userId . '.json';
 }
 
@@ -106,17 +134,21 @@ function getConversationHistory($userId, $limit = 10) {
         return [];
     }
     $history = aiLoadJSON($file);
-    return array_slice($history, -$limit);
+    return is_array($history) ? array_slice($history, -$limit) : [];
 }
 
 function saveConversationMessage($userId, $role, $message) {
     $file = getConversationFile($userId);
     $history = file_exists($file) ? aiLoadJSON($file) : [];
     
+    if (!is_array($history)) {
+        $history = [];
+    }
+    
     $history[] = [
         'timestamp' => date('Y-m-d H:i:s'),
         'role' => $role,
-        'message' => $message
+        'message' => (string)$message
     ];
     
     // Keep only last 50 messages per user
@@ -128,8 +160,15 @@ function saveConversationMessage($userId, $role, $message) {
 }
 
 function formatConversationHistory($history) {
+    if (!is_array($history) || empty($history)) {
+        return "";
+    }
+    
     $formatted = "📝 Conversation History:\n";
     foreach ($history as $msg) {
+        if (!is_array($msg) || !isset($msg['role']) || !isset($msg['message'])) {
+            continue;
+        }
         $role = ($msg['role'] === 'user') ? '👤 User' : '🤖 Assistant';
         $text = substr($msg['message'], 0, 100);
         if (strlen($msg['message']) > 100) {
@@ -143,8 +182,7 @@ function formatConversationHistory($history) {
 function clearConversationHistory($userId) {
     $file = getConversationFile($userId);
     if (file_exists($file)) {
-        unlink($file);
-        return true;
+        return @unlink($file);
     }
     return false;
 }
@@ -176,6 +214,11 @@ function executeSystemCommand($command) {
 
 function askGemini($prompt, $context = '', $imageBase64 = null, $imageMimeType = null) {
     global $GEMINI_API_KEY, $GOOGLE_IMAGEN_API_KEY;
+    
+    if (empty($prompt)) {
+        aiLog("⚠️ Empty prompt received");
+        return "I didn't receive a message. Please try again.";
+    }
     
     // Try Gemini API first (PRIMARY)
     if (!empty($GEMINI_API_KEY)) {
@@ -232,10 +275,22 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
         aiLog("🔄 Gemini: Trying $model$isImage...");
         
         $ch = curl_init();
+        if (!$ch) {
+            aiLog("❌ Gemini: $model curl init failed");
+            continue;
+        }
+        
+        $jsonData = json_encode($data);
+        if ($jsonData === false) {
+            aiLog("❌ Gemini: $model JSON encoding failed");
+            curl_close($ch);
+            continue;
+        }
+        
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_POST => 1,
-            CURLOPT_POSTFIELDS => json_encode($data),
+            CURLOPT_POSTFIELDS => $jsonData,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 30,
@@ -261,6 +316,10 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
         }
         
         $result = json_decode($response, true);
+        if (!is_array($result)) {
+            aiLog("❌ Gemini: $model invalid JSON response");
+            continue;
+        }
         
         if ($httpCode === 200) {
             if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
@@ -271,7 +330,8 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
                 aiLog("❌ Gemini: $model - No text in response");
             }
         } else {
-            aiLog("❌ Gemini: $model HTTP $httpCode - " . ($result['error']['message'] ?? 'Unknown error'));
+            $errorMsg = isset($result['error']['message']) ? $result['error']['message'] : 'Unknown error';
+            aiLog("❌ Gemini: $model HTTP $httpCode - $errorMsg");
         }
     }
     
@@ -303,10 +363,22 @@ function trySecondaryGeminiAPI($prompt, $context = '', $imageBase64 = null, $ima
         aiLog("🔄 Secondary Gemini: Trying $model$isImage...");
         
         $ch = curl_init();
+        if (!$ch) {
+            aiLog("❌ Secondary Gemini: $model curl init failed");
+            continue;
+        }
+        
+        $jsonData = json_encode($data);
+        if ($jsonData === false) {
+            aiLog("❌ Secondary Gemini: $model JSON encoding failed");
+            curl_close($ch);
+            continue;
+        }
+        
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_POST => 1,
-            CURLOPT_POSTFIELDS => json_encode($data),
+            CURLOPT_POSTFIELDS => $jsonData,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => 30,
@@ -332,6 +404,10 @@ function trySecondaryGeminiAPI($prompt, $context = '', $imageBase64 = null, $ima
         }
         
         $result = json_decode($response, true);
+        if (!is_array($result)) {
+            aiLog("❌ Secondary Gemini: $model invalid JSON response");
+            continue;
+        }
         
         if ($httpCode === 200) {
             if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
@@ -372,10 +448,20 @@ function tryHuggingFaceAPI($prompt, $context = '') {
         aiLog("🔄 HF: Trying $name...");
         
         $ch = curl_init();
+        if (!$ch) {
+            continue;
+        }
+        
+        $jsonData = json_encode($data);
+        if ($jsonData === false) {
+            curl_close($ch);
+            continue;
+        }
+        
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_POST => 1,
-            CURLOPT_POSTFIELDS => json_encode($data),
+            CURLOPT_POSTFIELDS => $jsonData,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
                 'Authorization: Bearer ' . $HUGGINGFACE_API_KEY
@@ -420,6 +506,10 @@ function tryHuggingFaceAPI($prompt, $context = '') {
 function getSmartFallbackResponse($question) {
     $questionLower = strtolower(trim($question));
     
+    if (empty($questionLower)) {
+        return "I'm here to help! What would you like to know?";
+    }
+    
     // Greeting responses
     if (aiMatchesIntent($questionLower, ['hello', 'hi', 'hey', 'greetings', 'what is your name'])) {
         return "👋 Hi there! I'm your AI assistant. I'm here to help you with information, research, and answering any questions you might have. What can I help you with today?";
@@ -450,8 +540,8 @@ function getSmartFallbackResponse($question) {
         return "✨ I can help with creative writing! I can write stories, poems, scripts, ideas, and much more. What would you like me to create for you?";
     }
     
-    // Analysis/advice
-    if (aiMatchesIntent($questionLower, ['analyze', 'analyze', 'opinion', 'advice', 'suggest', 'recommend', 'thoughts'])) {
+    // Analysis/advice (FIXED: removed duplicate 'analyze')
+    if (aiMatchesIntent($questionLower, ['analyze', 'opinion', 'advice', 'suggest', 'recommend', 'thoughts'])) {
         return "🧠 I'm happy to provide analysis, suggestions, and perspectives. Share what you'd like me to analyze or advise on, and I'll give you thoughtful insights!";
     }
     
@@ -459,31 +549,29 @@ function getSmartFallbackResponse($question) {
     return "🤖 I'm here to help! I can answer questions, provide information, write content, offer advice, or help with research on virtually any topic.\n\nWhat would you like to know?";
 }
 
-function aiMatchesIntent($text, $keywords) {
-    foreach ($keywords as $keyword) {
-        if (strpos($text, strtolower($keyword)) !== false) {
-            return true;
-        }
-    }
-    return false;
-}
-
 // ============================================================================
 // EXPORT FUNCTIONS (Main API)
 // ============================================================================
 
-// Get AI response with full system
 function getAIResponse($userId, $prompt, $context = '', $imageBase64 = null, $imageMimeType = null) {
+    if (empty($userId)) {
+        aiLog("⚠️ Empty user ID received");
+        $userId = 'unknown_' . uniqid();
+    }
+    
+    if (empty($prompt)) {
+        aiLog("⚠️ Empty prompt received");
+        return "I didn't receive a message. Please try again.";
+    }
+    
     // ===== IMAGE GENERATION RESTRICTION =====
-    // Block image generation requests
     $promptLower = strtolower($prompt);
     $imageKeywords = ['generate image', 'create image', 'make image', 'draw', 'create photo', 'generate photo', 'make picture', 'generate art', 'create art', 'design image', 'generate picture', 'edit image'];
     
     foreach ($imageKeywords as $keyword) {
         if (strpos($promptLower, $keyword) !== false) {
-            $response = "📸 <b>Image Generation Not Available</b>\n\nSorry, image generation is not available at this time. However, I can help you with:\n\n• Questions and answers\n• Information and research\n• Creative writing and ideas\n• General conversations\n• Problem solving\n\nWhat else can I help you with?";
+            $response = "📸 Image Generation Not Available\n\nSorry, image generation is not available at this time. However, I can help you with:\n\n• Questions and answers\n• Information and research\n• Creative writing and ideas\n• General conversations\n• Problem solving\n\nWhat else can I help you with?";
             
-            // Save to history
             saveConversationMessage($userId, 'user', $prompt);
             saveConversationMessage($userId, 'assistant', $response);
             
@@ -496,13 +584,21 @@ function getAIResponse($userId, $prompt, $context = '', $imageBase64 = null, $im
     $history = getConversationHistory($userId, 5);
     
     // Enhance context with history
-    if (!empty($history)) {
+    if (!empty($history) && is_array($history)) {
         $historyText = formatConversationHistory($history);
-        $context = $context ? "$context\n\n$historyText" : $historyText;
+        if ($historyText) {
+            $context = $context ? "$context\n\n$historyText" : $historyText;
+        }
     }
     
     // Get AI response
     $response = askGemini($prompt, $context, $imageBase64, $imageMimeType);
+    
+    // Ensure response is a string
+    if (!is_string($response)) {
+        $response = "I encountered an issue processing your request. Please try again.";
+        aiLog("⚠️ Response was not a string: " . gettype($response));
+    }
     
     // Save to history
     saveConversationMessage($userId, 'user', $prompt);
@@ -511,12 +607,10 @@ function getAIResponse($userId, $prompt, $context = '', $imageBase64 = null, $im
     return $response;
 }
 
-// Execute system command
 function runSystemCommand($command) {
     return executeSystemCommand($command);
 }
 
-// Manage conversation
 function getUserConversation($userId) {
     return getConversationHistory($userId, 50);
 }
