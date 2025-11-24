@@ -18,12 +18,15 @@ RUN mkdir -p /app/ai_data/conversations
 # Set permissions
 RUN chmod 755 /app && chmod 644 /app/ai_bot_engine.php
 
-# Expose port (for webhook if using with Telegram)
+# Copy API entry point
+COPY index.php /app/
+
+# Expose port for web service
 EXPOSE 8080
 
-# Health check
+# Health check - test the API endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD php -r "echo 'OK';" || exit 1
+    CMD curl -f http://localhost:8080/ || exit 1
 
-# Default command - can be overridden
-CMD ["php", "-r", "echo 'AI Bot Engine Ready - Include ai_bot_engine.php in your project'"]
+# Start PHP built-in web server
+CMD ["php", "-S", "0.0.0.0:8080", "-t", "/app"]
