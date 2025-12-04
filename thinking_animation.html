@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Thinking Animation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0f2847 100%);
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+        }
+
+        .container {
+            position: relative;
+            width: 500px;
+            height: 500px;
+        }
+
+        /* Main thinking indicator */
+        .thinking-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100px;
+            height: 100px;
+            z-index: 10;
+        }
+
+        /* Pulsing dots circle */
+        .pulsing-dots {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 120px;
+            height: 120px;
+            transform: translate(-50%, -50%);
+        }
+
+        .dot {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, #00ffff, #0088ff);
+            box-shadow: 0 0 20px #00ffff, inset 0 0 10px rgba(0, 255, 255, 0.5);
+        }
+
+        .dot:nth-child(1) {
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .dot:nth-child(2) {
+            top: 25%;
+            right: 0;
+            animation: pulse 1.5s ease-in-out infinite 0.3s;
+        }
+
+        .dot:nth-child(3) {
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            animation: pulse 1.5s ease-in-out infinite 0.6s;
+        }
+
+        .dot:nth-child(4) {
+            top: 25%;
+            left: 0;
+            animation: pulse 1.5s ease-in-out infinite 0.9s;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.3;
+                box-shadow: 0 0 10px #00ffff, inset 0 0 5px rgba(0, 255, 255, 0.3);
+            }
+            50% {
+                transform: scale(1.5);
+                opacity: 1;
+                box-shadow: 0 0 30px #00ffff, inset 0 0 15px rgba(0, 255, 255, 0.8);
+            }
+        }
+
+        /* Rotating rings */
+        .ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 2px solid;
+            border-radius: 50%;
+            opacity: 0.6;
+        }
+
+        .ring1 {
+            width: 160px;
+            height: 160px;
+            border-color: #00ffff;
+            animation: rotate 4s linear infinite;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+        }
+
+        .ring2 {
+            width: 220px;
+            height: 220px;
+            border-color: #ff00ff;
+            animation: rotate 6s linear infinite reverse;
+            box-shadow: 0 0 20px rgba(255, 0, 255, 0.2);
+        }
+
+        .ring3 {
+            width: 280px;
+            height: 280px;
+            border-color: #00ff88;
+            animation: rotate 8s linear infinite;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.15);
+        }
+
+        @keyframes rotate {
+            0% {
+                transform: translate(-50%, -50%) rotate(0deg);
+            }
+            100% {
+                transform: translate(-50%, -50%) rotate(360deg);
+            }
+        }
+
+        /* Flowing lines */
+        .flowing-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 300px;
+            height: 300px;
+        }
+
+        .flowing-line {
+            position: absolute;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #00ffff, transparent);
+            width: 100%;
+            top: 50%;
+            opacity: 0;
+            animation: flow 2s ease-in-out infinite;
+        }
+
+        .flowing-line:nth-child(1) {
+            transform: rotate(0deg);
+            animation-delay: 0s;
+            background: linear-gradient(90deg, transparent, #00ffff, transparent);
+        }
+
+        .flowing-line:nth-child(2) {
+            transform: rotate(45deg);
+            animation-delay: 0.25s;
+            background: linear-gradient(90deg, transparent, #ff00ff, transparent);
+        }
+
+        .flowing-line:nth-child(3) {
+            transform: rotate(90deg);
+            animation-delay: 0.5s;
+            background: linear-gradient(90deg, transparent, #00ff88, transparent);
+        }
+
+        .flowing-line:nth-child(4) {
+            transform: rotate(135deg);
+            animation-delay: 0.75s;
+            background: linear-gradient(90deg, transparent, #ffff00, transparent);
+        }
+
+        @keyframes flow {
+            0% {
+                opacity: 0;
+                width: 0;
+            }
+            50% {
+                opacity: 1;
+                width: 100%;
+            }
+            100% {
+                opacity: 0;
+                width: 0;
+            }
+        }
+
+        /* Center brain icon */
+        .brain-icon {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 50px;
+            z-index: 20;
+            animation: brain-pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes brain-pulse {
+            0%, 100% {
+                transform: translate(-50%, -50%) scale(1);
+                text-shadow: 0 0 10px rgba(0, 255, 255, 0.5);
+            }
+            50% {
+                transform: translate(-50%, -50%) scale(1.1);
+                text-shadow: 0 0 30px rgba(0, 255, 255, 0.9);
+            }
+        }
+
+        /* Text below animation */
+        .status-text {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00ffff;
+            font-size: 18px;
+            font-weight: bold;
+            text-align: center;
+            letter-spacing: 2px;
+            width: 100%;
+        }
+
+        .status-dots {
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .status-dots span {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ffff;
+            margin: 0 2px;
+            animation: pulse-dot 1.4s infinite;
+            box-shadow: 0 0 10px #00ffff;
+        }
+
+        .status-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .status-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes pulse-dot {
+            0%, 60%, 100% {
+                opacity: 0.3;
+                transform: scale(0.8);
+                box-shadow: 0 0 5px #00ffff;
+            }
+            30% {
+                opacity: 1;
+                transform: scale(1.2);
+                box-shadow: 0 0 15px #00ffff;
+            }
+        }
+
+        /* Bottom info */
+        .info-text {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00ff88;
+            font-size: 12px;
+            opacity: 0.6;
+            text-align: center;
+        }
+
+        /* Glowing background effect */
+        .glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 350px;
+            height: 350px;
+            background: radial-gradient(circle, rgba(0, 255, 255, 0.1) 0%, transparent 70%);
+            border-radius: 50%;
+            filter: blur(40px);
+            animation: glow-pulse 4s ease-in-out infinite;
+        }
+
+        @keyframes glow-pulse {
+            0%, 100% {
+                box-shadow: 0 0 60px rgba(0, 255, 255, 0.1);
+            }
+            50% {
+                box-shadow: 0 0 100px rgba(0, 255, 255, 0.2);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Glow effect -->
+        <div class="glow"></div>
+
+        <!-- Rotating rings -->
+        <div class="ring ring1"></div>
+        <div class="ring ring2"></div>
+        <div class="ring ring3"></div>
+
+        <!-- Flowing lines -->
+        <div class="flowing-container">
+            <div class="flowing-line"></div>
+            <div class="flowing-line"></div>
+            <div class="flowing-line"></div>
+            <div class="flowing-line"></div>
+        </div>
+
+        <!-- Pulsing dots -->
+        <div class="pulsing-dots">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+
+        <!-- Center brain icon -->
+        <div class="brain-icon">🧠</div>
+
+        <!-- Status text -->
+        <div class="status-text">
+            AI Analyzing
+            <div class="status-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+
+        <!-- Bottom info -->
+        <div class="info-text">
+            Processing your query • Gemini 2.5-Flash • Real-time thinking
+        </div>
+    </div>
+</body>
+</html>

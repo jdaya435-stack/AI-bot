@@ -11,14 +11,15 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy application files
-COPY ai_bot_engine.php index.php /app/
+COPY ai_bot_standalone.php /app/
+COPY preview.html admin.html admin_dashboard.html /app/
 
 # Create data directories with proper permissions
 RUN mkdir -p /app/ai_data/conversations && \
     chmod 755 /app && \
     chmod 755 /app/ai_data && \
     chmod 755 /app/ai_data/conversations && \
-    chmod 644 /app/ai_bot_engine.php /app/index.php
+    chmod 644 /app/ai_bot_standalone.php /app/preview.html /app/admin.html /app/admin_dashboard.html
 
 # Expose port for web service
 EXPOSE 8080
@@ -32,4 +33,4 @@ ENV PHP_DISPLAY_ERRORS=0 \
     PHP_LOG_ERRORS=1
 
 # Start PHP built-in web server with signal handling
-CMD ["php", "-S", "0.0.0.0:8080", "-t", "/app"]
+CMD ["php", "-S", "0.0.0.0:8080", "-t", "/app", "ai_bot_standalone.php"]
