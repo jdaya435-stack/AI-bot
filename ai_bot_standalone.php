@@ -1,32 +1,31 @@
-
 <?php
 /**
  * ========================================================================
- * AI BOT - STANDALONE ALL-IN-ONE VERSION
+ * ADVANCED AI BOT - ENTERPRISE EDITION
  * ========================================================================
- * Complete Telegram AI Bot with Google Gemini Integration
+ * Complete Telegram AI Bot with Advanced Features
  * 
- * Features:
- * - Google Gemini AI Integration (Primary + Fallback)
- * - Hugging Face AI Fallback
- * - Image Analysis (Vision AI)
- * - Group Chat Support
- * - Conversation History
- * - Custom Personality System
- * - Rate Limiting & Caching
- * - Statistics Tracking
- * - Webhook Management
- * 
- * Requirements:
- * - PHP 7.4+
- * - cURL extension
- * - Write permissions for ai_data directory
- * 
- * Environment Variables Required:
- * - TELEGRAM_BOT_TOKEN
- * - GOOGLE_GEMINI_API_KEY
- * - GOOGLE_IMAGEN_API_KEY (optional - fallback)
- * - HUGGINGFACE_API_KEY (optional - fallback)
+ * NEW FEATURES:
+ * - Donation System (Ko-fi + Telegram Stars)
+ * - Advanced AI Translation Engine
+ * - Dynamic AI Personality Engine
+ * - Comprehensive Analytics & Insights
+ * - Advanced Admin Security System
+ * - Real-time Notification System
+ * - Emergency & Maintenance Mode
+ * - User Behavior Analytics
+ * - Feature Flag Management
+ * - Mood Detection Engine
+ * - IP & Device Tracking
+ * - Real-time Monitoring Dashboard
+ * - Mandatory Information Gathering
+ * - Group Admin Privilege Enforcement
+ * - Auto-reply System
+ * - Content Moderation
+ * - Rate Limit Tiers
+ * - Session Management
+ * - Webhook Security
+ * - Advanced Caching Strategy
  * 
  * ========================================================================
  */
@@ -56,6 +55,9 @@ $GEMINI_API_KEY = getenv('GOOGLE_GEMINI_API_KEY');
 $GOOGLE_IMAGEN_API_KEY = getenv('GOOGLE_IMAGEN_API_KEY');
 $HUGGINGFACE_API_KEY = getenv('HUGGINGFACE_API_KEY');
 $ADMIN_USER_ID = getenv('ADMIN_USER_ID') ?: '';
+$ADMIN_TOKEN = getenv('ADMIN_TOKEN') ?: bin2hex(random_bytes(16));
+$BOT_OWNER_ID = getenv('BOT_OWNER_ID') ?: $ADMIN_USER_ID;
+$WEBHOOK_SECRET = getenv('WEBHOOK_SECRET') ?: bin2hex(random_bytes(32));
 
 // Data directories
 define('AI_DATA_DIR', __DIR__ . '/ai_data');
@@ -66,27 +68,128 @@ define('AI_USERS_DIR', AI_DATA_DIR . '/users');
 define('AI_PERSONALITY_DIR', AI_DATA_DIR . '/personality');
 define('AI_PREFERENCES_DIR', AI_DATA_DIR . '/preferences');
 define('AI_ADMIN_DIR', AI_DATA_DIR . '/admin');
+define('AI_DONATIONS_DIR', AI_DATA_DIR . '/donations');
+define('AI_ANALYTICS_DIR', AI_DATA_DIR . '/analytics');
+define('AI_MONITORING_DIR', AI_DATA_DIR . '/monitoring');
+define('AI_SESSIONS_DIR', AI_DATA_DIR . '/sessions');
+define('AI_DEVICE_DIR', AI_DATA_DIR . '/devices');
+define('AI_FLAGS_DIR', AI_DATA_DIR . '/flags');
+define('AI_NOTIFICATIONS_DIR', AI_DATA_DIR . '/notifications');
+define('AI_MODERATION_DIR', AI_DATA_DIR . '/moderation');
 
 // Initialize directories
-foreach ([AI_DATA_DIR, AI_CONVERSATIONS_DIR, AI_CACHE_DIR, AI_STATS_DIR, AI_USERS_DIR, AI_PERSONALITY_DIR, AI_PREFERENCES_DIR, AI_ADMIN_DIR] as $dir) {
+$dirs = [
+    AI_DATA_DIR, AI_CONVERSATIONS_DIR, AI_CACHE_DIR, AI_STATS_DIR, 
+    AI_USERS_DIR, AI_PERSONALITY_DIR, AI_PREFERENCES_DIR, AI_ADMIN_DIR,
+    AI_DONATIONS_DIR, AI_ANALYTICS_DIR, AI_MONITORING_DIR, AI_SESSIONS_DIR,
+    AI_DEVICE_DIR, AI_FLAGS_DIR, AI_NOTIFICATIONS_DIR, AI_MODERATION_DIR
+];
+
+foreach ($dirs as $dir) {
     @mkdir($dir, 0755, true);
 }
 
-// Admin check function
-function isAdmin($userId) {
-    global $ADMIN_USER_ID;
-    if (empty($ADMIN_USER_ID)) return false;
-    $adminIds = array_map('trim', explode(',', $ADMIN_USER_ID));
-    return in_array((string)$userId, $adminIds);
+// ============================================================================
+// SYSTEM STATUS & MAINTENANCE MODE
+// ============================================================================
+
+function getSystemStatus() {
+    $statusFile = AI_ADMIN_DIR . '/system_status.json';
+    if (!file_exists($statusFile)) {
+        $defaultStatus = [
+            'maintenance_mode' => false,
+            'emergency_mode' => false,
+            'status' => 'operational',
+            'message' => '',
+            'updated_at' => date('Y-m-d H:i:s')
+        ];
+        aiSaveJSON($statusFile, $defaultStatus);
+        return $defaultStatus;
+    }
+    return aiLoadJSON($statusFile);
+}
+
+function setMaintenanceMode($enabled, $message = '') {
+    $statusFile = AI_ADMIN_DIR . '/system_status.json';
+    $status = getSystemStatus();
+    $status['maintenance_mode'] = $enabled;
+    $status['message'] = $message;
+    $status['updated_at'] = date('Y-m-d H:i:s');
+    return aiSaveJSON($statusFile, $status);
+}
+
+function setEmergencyMode($enabled, $message = '') {
+    $statusFile = AI_ADMIN_DIR . '/system_status.json';
+    $status = getSystemStatus();
+    $status['emergency_mode'] = $enabled;
+    $status['message'] = $message;
+    $status['updated_at'] = date('Y-m-d H:i:s');
+    return aiSaveJSON($statusFile, $status);
+}
+
+function isSystemOperational() {
+    $status = getSystemStatus();
+    return !$status['maintenance_mode'] && !$status['emergency_mode'];
+}
+
+// ============================================================================
+// FEATURE FLAGS MANAGEMENT
+// ============================================================================
+
+function getFeatureFlags() {
+    $flagsFile = AI_FLAGS_DIR . '/features.json';
+    if (!file_exists($flagsFile)) {
+        $defaultFlags = [
+            'donations_enabled' => true,
+            'translations_enabled' => true,
+            'web_search_enabled' => true,
+            'image_analysis_enabled' => true,
+            'mood_detection_enabled' => true,
+            'analytics_enabled' => true,
+            'group_chat_enabled' => true,
+            'voice_messages_enabled' => false,
+            'document_analysis_enabled' => false,
+            'auto_reply_enabled' => false
+        ];
+        aiSaveJSON($flagsFile, $defaultFlags);
+        return $defaultFlags;
+    }
+    return aiLoadJSON($flagsFile);
+}
+
+function isFeatureEnabled($feature) {
+    $flags = getFeatureFlags();
+    return $flags[$feature] ?? false;
+}
+
+function setFeatureFlag($feature, $enabled) {
+    $flagsFile = AI_FLAGS_DIR . '/features.json';
+    $flags = getFeatureFlags();
+    $flags[$feature] = $enabled;
+    return aiSaveJSON($flagsFile, $flags);
 }
 
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
-function aiLog($message) {
+function aiLog($message, $level = 'INFO') {
     $timestamp = date('Y-m-d H:i:s');
-    error_log("[$timestamp] $message");
+    $logEntry = "[$timestamp] [$level] $message";
+    error_log($logEntry);
+    
+    // Also save to monitoring file
+    $monitoringFile = AI_MONITORING_DIR . '/logs_' . date('Y-m-d') . '.json';
+    $logs = file_exists($monitoringFile) ? aiLoadJSON($monitoringFile) : [];
+    $logs[] = [
+        'timestamp' => $timestamp,
+        'level' => $level,
+        'message' => $message
+    ];
+    if (count($logs) > 1000) {
+        $logs = array_slice($logs, -1000);
+    }
+    aiSaveJSON($monitoringFile, $logs);
 }
 
 function aiLoadJSON($file) {
@@ -110,7 +213,7 @@ function aiSaveJSON($file, $data) {
     if (flock($fp, LOCK_EX)) {
         ftruncate($fp, 0);
         rewind($fp);
-        fwrite($fp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        fwrite($fp, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
         fflush($fp);
         flock($fp, LOCK_UN);
         fclose($fp);
@@ -118,6 +221,222 @@ function aiSaveJSON($file, $data) {
     }
     fclose($fp);
     return false;
+}
+
+// ============================================================================
+// ADMIN & SECURITY FUNCTIONS
+// ============================================================================
+
+function isAdmin($userId) {
+    global $ADMIN_USER_ID;
+    if (empty($ADMIN_USER_ID)) return false;
+    $adminIds = array_map('trim', explode(',', $ADMIN_USER_ID));
+    return in_array((string)$userId, $adminIds);
+}
+
+function isBotOwner($userId) {
+    global $BOT_OWNER_ID;
+    return (string)$userId === (string)$BOT_OWNER_ID;
+}
+
+function getAdminPermissions($userId) {
+    $permFile = AI_ADMIN_DIR . '/permissions.json';
+    $permissions = file_exists($permFile) ? aiLoadJSON($permFile) : [];
+    return $permissions[(string)$userId] ?? [
+        'can_block_users' => false,
+        'can_broadcast' => false,
+        'can_view_analytics' => false,
+        'can_manage_system' => false,
+        'can_moderate_content' => false
+    ];
+}
+
+function setAdminPermissions($userId, $permissions) {
+    $permFile = AI_ADMIN_DIR . '/permissions.json';
+    $allPerms = file_exists($permFile) ? aiLoadJSON($permFile) : [];
+    $allPerms[(string)$userId] = $permissions;
+    return aiSaveJSON($permFile, $allPerms);
+}
+
+function hasPermission($userId, $permission) {
+    if (isBotOwner($userId)) return true;
+    if (!isAdmin($userId)) return false;
+    $perms = getAdminPermissions($userId);
+    return $perms[$permission] ?? false;
+}
+
+// ============================================================================
+// IP & DEVICE TRACKING
+// ============================================================================
+
+function getClientIP() {
+    $keys = ['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_FORWARDED', 
+             'HTTP_FORWARDED_FOR', 'HTTP_FORWARDED', 'REMOTE_ADDR'];
+    foreach ($keys as $key) {
+        if (isset($_SERVER[$key])) {
+            $ip = $_SERVER[$key];
+            if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                return $ip;
+            }
+        }
+    }
+    return 'Unknown';
+}
+
+function getUserAgent() {
+    return $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown';
+}
+
+function trackDeviceInfo($userId, $message) {
+    $deviceFile = AI_DEVICE_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $deviceData = file_exists($deviceFile) ? aiLoadJSON($deviceFile) : [];
+    
+    $currentDevice = [
+        'ip' => getClientIP(),
+        'user_agent' => getUserAgent(),
+        'platform' => $message['from']['language_code'] ?? 'unknown',
+        'first_seen' => $deviceData['first_seen'] ?? date('Y-m-d H:i:s'),
+        'last_seen' => date('Y-m-d H:i:s'),
+        'request_count' => ($deviceData['request_count'] ?? 0) + 1
+    ];
+    
+    aiSaveJSON($deviceFile, $currentDevice);
+    return $currentDevice;
+}
+
+// ============================================================================
+// SESSION MANAGEMENT
+// ============================================================================
+
+function createSession($userId) {
+    $sessionId = bin2hex(random_bytes(32));
+    $sessionFile = AI_SESSIONS_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $sessionData = [
+        'session_id' => $sessionId,
+        'user_id' => $userId,
+        'created_at' => date('Y-m-d H:i:s'),
+        'expires_at' => date('Y-m-d H:i:s', strtotime('+24 hours')),
+        'active' => true
+    ];
+    aiSaveJSON($sessionFile, $sessionData);
+    return $sessionId;
+}
+
+function getSession($userId) {
+    $sessionFile = AI_SESSIONS_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    if (!file_exists($sessionFile)) return null;
+    $session = aiLoadJSON($sessionFile);
+    if (strtotime($session['expires_at']) < time()) {
+        return null;
+    }
+    return $session;
+}
+
+// ============================================================================
+// NOTIFICATION SYSTEM
+// ============================================================================
+
+function sendNotificationToOwner($message, $priority = 'normal') {
+    global $BOT_OWNER_ID, $TELEGRAM_BOT_TOKEN;
+    
+    if (empty($BOT_OWNER_ID) || empty($TELEGRAM_BOT_TOKEN)) return false;
+    
+    $emoji = [
+        'critical' => '🚨',
+        'high' => '⚠️',
+        'normal' => 'ℹ️',
+        'low' => '💬'
+    ];
+    
+    $icon = $emoji[$priority] ?? 'ℹ️';
+    $notifMsg = "$icon <b>[Bot Notification]</b>\n\n$message\n\n⏰ " . date('Y-m-d H:i:s');
+    
+    return sendTelegramMessage($BOT_OWNER_ID, $notifMsg, $TELEGRAM_BOT_TOKEN);
+}
+
+function logNotification($userId, $type, $message) {
+    $notifFile = AI_NOTIFICATIONS_DIR . '/notifications_' . date('Y-m-d') . '.json';
+    $notifications = file_exists($notifFile) ? aiLoadJSON($notifFile) : [];
+    
+    $notifications[] = [
+        'user_id' => $userId,
+        'type' => $type,
+        'message' => $message,
+        'timestamp' => date('Y-m-d H:i:s')
+    ];
+    
+    if (count($notifications) > 500) {
+        $notifications = array_slice($notifications, -500);
+    }
+    
+    aiSaveJSON($notifFile, $notifications);
+}
+
+// ============================================================================
+// DONATION SYSTEM
+// ============================================================================
+
+function getDonationStats() {
+    $donationFile = AI_DONATIONS_DIR . '/donations.json';
+    if (!file_exists($donationFile)) {
+        return [
+            'total_amount' => 0,
+            'total_stars' => 0,
+            'donation_count' => 0,
+            'top_donors' => []
+        ];
+    }
+    return aiLoadJSON($donationFile);
+}
+
+function recordDonation($userId, $amount, $type = 'kofi', $stars = 0) {
+    $donationFile = AI_DONATIONS_DIR . '/donations.json';
+    $stats = getDonationStats();
+    
+    if ($type === 'stars') {
+        $stats['total_stars'] += $stars;
+    } else {
+        $stats['total_amount'] += $amount;
+    }
+    
+    $stats['donation_count']++;
+    
+    if (!isset($stats['top_donors'][$userId])) {
+        $stats['top_donors'][$userId] = [
+            'total' => 0,
+            'stars' => 0,
+            'count' => 0
+        ];
+    }
+    
+    $stats['top_donors'][$userId]['total'] += $amount;
+    $stats['top_donors'][$userId]['stars'] += $stars;
+    $stats['top_donors'][$userId]['count']++;
+    
+    aiSaveJSON($donationFile, $stats);
+    
+    // Log individual donation
+    $userDonationFile = AI_DONATIONS_DIR . '/user_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $userDonations = file_exists($userDonationFile) ? aiLoadJSON($userDonationFile) : [];
+    
+    $userDonations[] = [
+        'amount' => $amount,
+        'stars' => $stars,
+        'type' => $type,
+        'timestamp' => date('Y-m-d H:i:s')
+    ];
+    
+    aiSaveJSON($userDonationFile, $userDonations);
+    
+    // Notify owner
+    $userName = getUserPreferences($userId)['name'] ?? "User $userId";
+    if ($type === 'stars') {
+        sendNotificationToOwner("💰 New donation! $userName sent $stars Telegram Stars!", 'high');
+    } else {
+        sendNotificationToOwner("💰 New Ko-fi donation recorded for $userName: $$amount", 'high');
+    }
+    
+    return true;
 }
 
 // ============================================================================
@@ -130,7 +449,7 @@ function sendChatAction($chatId, $action, $botToken) {
     if (!in_array($action, $validActions)) $action = 'typing';
     
     $url = "https://api.telegram.org/bot{$botToken}/sendChatAction";
-    $data = ['chat_id' => (int)$chatId, 'action' => $action];
+    $data = ['chat_id' => $chatId, 'action' => $action];
     
     $ch = curl_init();
     curl_setopt_array($ch, [
@@ -150,7 +469,7 @@ function sendChatAction($chatId, $action, $botToken) {
     return $httpCode === 200;
 }
 
-function sendTelegramMessage($chatId, $text, $botToken, $retries = 3, $retryDelay = 1000000) {
+function sendTelegramMessage($chatId, $text, $botToken, $replyMarkup = null, $retries = 3) {
     if (empty($botToken)) return false;
     
     $maxLength = 4096;
@@ -159,7 +478,15 @@ function sendTelegramMessage($chatId, $text, $botToken, $retries = 3, $retryDela
     }
     
     $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
-    $data = ['chat_id' => (int)$chatId, 'text' => $text, 'parse_mode' => 'HTML'];
+    $data = [
+        'chat_id' => $chatId,
+        'text' => $text,
+        'parse_mode' => 'HTML'
+    ];
+    
+    if ($replyMarkup) {
+        $data['reply_markup'] = $replyMarkup;
+    }
     
     for ($attempt = 1; $attempt <= $retries; $attempt++) {
         $ch = curl_init();
@@ -181,11 +508,12 @@ function sendTelegramMessage($chatId, $text, $botToken, $retries = 3, $retryDela
             $result = json_decode($response, true);
             return $result['result']['message_id'] ?? true;
         }
+        
         if ($httpCode === 429 && $attempt < $retries) {
-            usleep($retryDelay);
-            $retryDelay *= 2;
+            usleep(1000000);
             continue;
         }
+        
         if ($httpCode !== 429) break;
     }
     
@@ -196,7 +524,12 @@ function editTelegramMessage($chatId, $messageId, $text, $botToken) {
     if (empty($botToken) || empty($messageId)) return false;
     
     $url = "https://api.telegram.org/bot{$botToken}/editMessageText";
-    $data = ['chat_id' => (int)$chatId, 'message_id' => (int)$messageId, 'text' => $text, 'parse_mode' => 'HTML'];
+    $data = [
+        'chat_id' => $chatId,
+        'message_id' => $messageId,
+        'text' => $text,
+        'parse_mode' => 'HTML'
+    ];
     
     $ch = curl_init();
     curl_setopt_array($ch, [
@@ -249,8 +582,45 @@ function downloadFile($fileId, $botToken) {
     return null;
 }
 
+function getChatMember($chatId, $userId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/getChatMember";
+    $data = ['chat_id' => $chatId, 'user_id' => $userId];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 5
+    ]);
+    
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    return json_decode($response, true);
+}
+
+function getBotInfo($botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/getMe";
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 5
+    ]);
+    
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return $result['result'] ?? null;
+}
+
 // ============================================================================
-// GROUP CHAT SUPPORT
+// GROUP CHAT SUPPORT WITH ADMIN ENFORCEMENT
 // ============================================================================
 
 function isGroupChat($message) {
@@ -263,34 +633,91 @@ function isBotMentioned($text) {
     return (preg_match('/@ai\b/i', $text) > 0) || (preg_match('/^\/ai\b/i', $text) > 0);
 }
 
+function isBotAdmin($chatId, $botToken) {
+    $botInfo = getBotInfo($botToken);
+    if (!$botInfo) return false;
+    
+    $botId = $botInfo['id'];
+    $member = getChatMember($chatId, $botId, $botToken);
+    
+    if (!isset($member['result'])) return false;
+    
+    $status = $member['result']['status'] ?? '';
+    return in_array($status, ['administrator', 'creator']);
+}
+
+function requestAdminPrivileges($chatId, $botToken) {
+    $message = "⚠️ <b>Admin Privileges Required</b>\n\n";
+    $message .= "To function properly in this group, I need administrator privileges with the following permissions:\n\n";
+    $message .= "✅ Delete messages\n";
+    $message .= "✅ Ban users (for moderation)\n";
+    $message .= "✅ Pin messages\n";
+    $message .= "✅ Manage group\n\n";
+    $message .= "Please promote me to admin with these permissions for full functionality.";
+    
+    return sendTelegramMessage($chatId, $message, $botToken);
+}
+
+function handleNewGroupJoin($message, $botToken) {
+    global $BOT_OWNER_ID;
+    
+    $chatId = $message['chat']['id'];
+    $chatTitle = $message['chat']['title'] ?? 'Unknown Group';
+    $addedBy = $message['from']['id'] ?? 'Unknown';
+    $addedByName = $message['from']['first_name'] ?? 'Unknown User';
+    
+    // Check if bot has admin privileges
+    if (!isBotAdmin($chatId, $botToken)) {
+        requestAdminPrivileges($chatId, $botToken);
+        
+        // Notify owner
+        $notifMsg = "🆕 Added to new group!\n\n";
+        $notifMsg .= "📝 Group: $chatTitle\n";
+        $notifMsg .= "🆔 Chat ID: $chatId\n";
+        $notifMsg .= "👤 Added by: $addedByName (ID: $addedBy)\n";
+        $notifMsg .= "⚠️ Status: Waiting for admin privileges";
+        
+        sendNotificationToOwner($notifMsg, 'high');
+    } else {
+        // Send welcome message
+        $welcomeMsg = "👋 <b>Hello everyone!</b>\n\n";
+        $welcomeMsg .= "I'm your AI assistant! I can help with:\n\n";
+        $welcomeMsg .= "🤖 Intelligent conversations\n";
+        $welcomeMsg .= "📸 Image analysis\n";
+        $welcomeMsg .= "🌐 Translations\n";
+        $welcomeMsg .= "🔍 Web search\n";
+        $welcomeMsg .= "📊 And much more!\n\n";
+        $welcomeMsg .= "Mention me with @ai or reply to my messages to chat!";
+        
+        sendTelegramMessage($chatId, $welcomeMsg, $botToken);
+        
+        // Notify owner
+        $notifMsg = "🆕 Added to new group!\n\n";
+        $notifMsg .= "📝 Group: $chatTitle\n";
+        $notifMsg .= "🆔 Chat ID: $chatId\n";
+        $notifMsg .= "👤 Added by: $addedByName (ID: $addedBy)\n";
+        $notifMsg .= "✅ Status: Admin privileges granted";
+        
+        sendNotificationToOwner($notifMsg, 'normal');
+    }
+}
+
 function shouldProcessGroupMessage($message, $botToken) {
     if (!isGroupChat($message)) return true;
     
     $text = $message['text'] ?? '';
     
-    // Check if bot is mentioned
     if (isBotMentioned($text)) return true;
-    
-    // Check if message starts with /ai command
     if (stripos($text, '/ai') === 0) return true;
     
-    // Check if replying to bot's message
     if (isset($message['reply_to_message'])) {
         $reply = $message['reply_to_message'];
         $fromUser = $reply['from'] ?? [];
-        
-        // Get bot info to check if replied message is from this bot
         if (($fromUser['is_bot'] ?? false)) {
-            return true;
-        }
-        
-        // Also check if current message mentions AI
-        if (isBotMentioned($text)) {
             return true;
         }
     }
     
-    // Check for entities (mentions)
     if (isset($message['entities'])) {
         foreach ($message['entities'] as $entity) {
             if ($entity['type'] === 'mention' || $entity['type'] === 'text_mention') {
@@ -310,18 +737,16 @@ function getMessageHistory($message, $botToken) {
         $replyUserId = $reply['from']['id'] ?? 0;
         $replyText = $reply['text'] ?? '';
         
-        // Handle photo captions in replied message
         if (empty($replyText) && isset($reply['caption'])) {
             $replyText = $reply['caption'];
         }
         
-        // Check if replied message has a photo
         $hasPhoto = isset($reply['photo']) ? '[📸 Photo] ' : '';
         
         if (empty($replyText)) {
             $replyText = '[No text content]';
         } else {
-            $replyText = substr($replyText, 0, 500); // Extended limit
+            $replyText = substr($replyText, 0, 500);
         }
         
         $history = "📌 <b>Context - Replying to message from $replyUser (ID: $replyUserId):</b>\n";
@@ -387,7 +812,7 @@ function formatConversationForContext($userId, $limit = 6) {
 }
 
 // ============================================================================
-// USER PREFERENCES SYSTEM (Multi-Turn Context Memory)
+// USER PREFERENCES SYSTEM (Enhanced with Mandatory Info)
 // ============================================================================
 
 function getUserPreferences($userId) {
@@ -402,77 +827,47 @@ function getUserPreferences($userId) {
             'topics_of_interest' => [],
             'response_style' => 'balanced',
             'remember_items' => [],
+            'profile_complete' => false,
+            'awaiting_name' => false,
+            'awaiting_nationality' => false,
             'created' => date('Y-m-d H:i:s'),
             'last_active' => date('Y-m-d H:i:s')
         ];
     }
-    $data = json_decode(file_get_contents($file), true);
-    // Ensure new fields exist for existing users
+    $data = aiLoadJSON($file);
     if (!isset($data['telegram_id'])) $data['telegram_id'] = $userId;
     if (!isset($data['nationality'])) $data['nationality'] = null;
     if (!isset($data['country_emoji'])) $data['country_emoji'] = null;
+    if (!isset($data['profile_complete'])) $data['profile_complete'] = false;
+    if (!isset($data['awaiting_name'])) $data['awaiting_name'] = false;
+    if (!isset($data['awaiting_nationality'])) $data['awaiting_nationality'] = false;
     return is_array($data) ? $data : getUserPreferences('default');
 }
 
+function isProfileComplete($userId) {
+    $prefs = getUserPreferences($userId);
+    return !empty($prefs['name']) && !empty($prefs['nationality']) && $prefs['profile_complete'] === true;
+}
+
 function getCountryFlagEmoji($nationality) {
-    // Map country names to flag emojis
     $countryFlags = [
-        'kenya' => '🇰🇪',
-        'usa' => '🇺🇸',
-        'united states' => '🇺🇸',
-        'america' => '🇺🇸',
-        'uk' => '🇬🇧',
-        'united kingdom' => '🇬🇧',
-        'britain' => '🇬🇧',
-        'england' => '🇬🇧',
-        'india' => '🇮🇳',
-        'china' => '🇨🇳',
-        'japan' => '🇯🇵',
-        'nigeria' => '🇳🇬',
-        'germany' => '🇩🇪',
-        'france' => '🇫🇷',
-        'italy' => '🇮🇹',
-        'spain' => '🇪🇸',
-        'brazil' => '🇧🇷',
-        'canada' => '🇨🇦',
-        'australia' => '🇦🇺',
-        'mexico' => '🇲🇽',
-        'russia' => '🇷🇺',
-        'south korea' => '🇰🇷',
-        'korea' => '🇰🇷',
-        'south africa' => '🇿🇦',
-        'egypt' => '🇪🇬',
-        'pakistan' => '🇵🇰',
-        'bangladesh' => '🇧🇩',
-        'philippines' => '🇵🇭',
-        'vietnam' => '🇻🇳',
-        'thailand' => '🇹🇭',
-        'indonesia' => '🇮🇩',
-        'turkey' => '🇹🇷',
-        'saudi arabia' => '🇸🇦',
-        'uae' => '🇦🇪',
-        'argentina' => '🇦🇷',
-        'colombia' => '🇨🇴',
-        'chile' => '🇨🇱',
-        'poland' => '🇵🇱',
-        'ukraine' => '🇺🇦',
-        'netherlands' => '🇳🇱',
-        'belgium' => '🇧🇪',
-        'sweden' => '🇸🇪',
-        'norway' => '🇳🇴',
-        'denmark' => '🇩🇰',
-        'finland' => '🇫🇮',
-        'portugal' => '🇵🇹',
-        'greece' => '🇬🇷',
-        'switzerland' => '🇨🇭',
-        'austria' => '🇦🇹',
-        'ireland' => '🇮🇪',
-        'new zealand' => '🇳🇿',
-        'singapore' => '🇸🇬',
-        'malaysia' => '🇲🇾',
-        'israel' => '🇮🇱',
-        'iran' => '🇮🇷',
-        'iraq' => '🇮🇶'
+        'kenya' => '🇰🇪', 'usa' => '🇺🇸', 'united states' => '🇺🇸', 'america' => '🇺🇸',
+        'uk' => '🇬🇧', 'united kingdom' => '🇬🇧', 'britain' => '🇬🇧', 'england' => '🇬🇧',
+        'india' => '🇮🇳', 'china' => '🇨🇳', 'japan' => '🇯🇵', 'nigeria' => '🇳🇬',
+        'germany' => '🇩🇪', 'france' => '🇫🇷', 'italy' => '🇮🇹', 'spain' => '🇪🇸',
+        'brazil' => '🇧🇷', 'canada' => '🇨🇦', 'australia' => '🇦🇺', 'mexico' => '🇲🇽',
+        'russia' => '🇷🇺', 'south korea' => '🇰🇷', 'korea' => '🇰🇷', 'south africa' => '🇿🇦',
+        'egypt' => '🇪🇬', 'pakistan' => '🇵🇰', 'bangladesh' => '🇧🇩', 'philippines' => '🇵🇭',
+        'vietnam' => '🇻🇳', 'thailand' => '🇹🇭', 'indonesia' => '🇮🇩', 'turkey' => '🇹🇷',
+        'saudi arabia' => '🇸🇦', 'uae' => '🇦🇪', 'argentina' => '🇦🇷', 'colombia' => '🇨🇴',
+        'chile' => '🇨🇱', 'poland' => '🇵🇱', 'ukraine' => '🇺🇦', 'netherlands' => '🇳🇱',
+        'belgium' => '🇧🇪', 'sweden' => '🇸🇪', 'norway' => '🇳🇴', 'denmark' => '🇩🇰',
+        'finland' => '🇫🇮', 'portugal' => '🇵🇹', 'greece' => '🇬🇷', 'switzerland' => '🇨🇭',
+        'austria' => '🇦🇹', 'ireland' => '🇮🇪', 'new zealand' => '🇳🇿', 'singapore' => '🇸🇬',
+        'malaysia' => '🇲🇾', 'israel' => '🇮🇱', 'iran' => '🇮🇷', 'iraq' => '🇮🇶',
+        'morocco' => '🇲🇦', 'algeria' => '🇩🇿', 'tunisia' => '🇹🇳', 'libya' => '🇱🇾',
+        'ethiopia' => '🇪🇹', 'ghana' => '🇬🇭', 'tanzania' => '🇹🇿', 'uganda' => '🇺🇬',
+        'rwanda' => '🇷🇼', 'zimbabwe' => '🇿🇼', 'zambia' => '🇿🇲', 'botswana' => '🇧🇼'
     ];
     
     $nationalityLower = strtolower(trim($nationality));
@@ -482,22 +877,12 @@ function getCountryFlagEmoji($nationality) {
 function saveUserPreferences($userId, $preferences) {
     $file = AI_PREFERENCES_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
     $preferences['last_active'] = date('Y-m-d H:i:s');
-    return file_put_contents($file, json_encode($preferences, JSON_PRETTY_PRINT)) !== false;
+    return aiSaveJSON($file, $preferences);
 }
 
 function updateUserPreference($userId, $key, $value) {
     $prefs = getUserPreferences($userId);
     $prefs[$key] = $value;
-    return saveUserPreferences($userId, $prefs);
-}
-
-function addRememberItem($userId, $item) {
-    $prefs = getUserPreferences($userId);
-    if (!isset($prefs['remember_items'])) $prefs['remember_items'] = [];
-    $prefs['remember_items'][] = ['text' => $item, 'added' => date('Y-m-d H:i:s')];
-    if (count($prefs['remember_items']) > 20) {
-        $prefs['remember_items'] = array_slice($prefs['remember_items'], -20);
-    }
     return saveUserPreferences($userId, $prefs);
 }
 
@@ -507,6 +892,9 @@ function formatPreferencesForContext($userId) {
     
     if (!empty($prefs['name'])) {
         $context .= "User's name is {$prefs['name']}. Always address them by their name when appropriate. ";
+    }
+    if (!empty($prefs['nationality'])) {
+        $context .= "User is from {$prefs['nationality']}. ";
     }
     if (!empty($prefs['preferred_language']) && $prefs['preferred_language'] !== 'English') {
         $context .= "User prefers responses in {$prefs['preferred_language']}. ";
@@ -525,31 +913,88 @@ function formatPreferencesForContext($userId) {
     return $context;
 }
 
-function parseRememberCommand($text) {
-    $patterns = [
-        '/remember\s+(?:that\s+)?my\s+name\s+is\s+([a-zA-Z\s]+)/i' => 'name',
-        '/(?:i\s+prefer|respond\s+in|use)\s+([a-zA-Z]+)\s+(?:language)?/i' => 'language',
-        '/remember\s+(?:that\s+)?(.+)/i' => 'general'
+// ============================================================================
+// MOOD DETECTION ENGINE
+// ============================================================================
+
+function detectMood($text) {
+    $text = strtolower($text);
+    
+    $moodKeywords = [
+        'happy' => ['happy', 'great', 'awesome', 'wonderful', 'fantastic', 'excellent', 'love', 'excited', '😊', '😄', '😃', '🎉', '❤️'],
+        'sad' => ['sad', 'depressed', 'down', 'unhappy', 'crying', 'terrible', 'awful', 'horrible', '😢', '😭', '💔'],
+        'angry' => ['angry', 'mad', 'furious', 'annoyed', 'frustrated', 'pissed', 'hate', '😠', '😡', '🤬'],
+        'anxious' => ['anxious', 'worried', 'nervous', 'stressed', 'scared', 'afraid', 'concerned', '😰', '😨'],
+        'confused' => ['confused', 'lost', 'don\'t understand', 'unclear', 'puzzled', '🤔', '😕'],
+        'excited' => ['excited', 'thrilled', 'pumped', 'eager', 'can\'t wait', '🤩', '😍'],
+        'neutral' => []
     ];
     
-    foreach ($patterns as $pattern => $type) {
-        if (preg_match($pattern, $text, $matches)) {
-            return ['type' => $type, 'value' => trim($matches[1])];
+    $moodScores = [];
+    foreach ($moodKeywords as $mood => $keywords) {
+        $score = 0;
+        foreach ($keywords as $keyword) {
+            if (strpos($text, $keyword) !== false) {
+                $score++;
+            }
         }
+        $moodScores[$mood] = $score;
     }
-    return null;
+    
+    arsort($moodScores);
+    $detectedMood = array_key_first($moodScores);
+    $confidence = $moodScores[$detectedMood] > 0 ? min(100, $moodScores[$detectedMood] * 25) : 0;
+    
+    return [
+        'mood' => $detectedMood,
+        'confidence' => $confidence,
+        'scores' => $moodScores
+    ];
+}
+
+function logMood($userId, $mood, $confidence) {
+    $moodFile = AI_ANALYTICS_DIR . '/moods_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $moods = file_exists($moodFile) ? aiLoadJSON($moodFile) : [];
+    
+    $moods[] = [
+        'mood' => $mood,
+        'confidence' => $confidence,
+        'timestamp' => date('Y-m-d H:i:s')
+    ];
+    
+    if (count($moods) > 100) {
+        $moods = array_slice($moods, -100);
+    }
+    
+    aiSaveJSON($moodFile, $moods);
+}
+
+function adjustResponseByMood($response, $mood) {
+    $moodPrefixes = [
+        'sad' => "I sense you might be feeling down. ",
+        'angry' => "I understand you might be frustrated. ",
+        'anxious' => "I can see this might be concerning for you. ",
+        'happy' => "I'm glad to hear you're in good spirits! ",
+        'excited' => "I love your enthusiasm! "
+    ];
+    
+    if (isset($moodPrefixes[$mood]) && $mood !== 'neutral') {
+        return $moodPrefixes[$mood] . $response;
+    }
+    
+    return $response;
 }
 
 // ============================================================================
-// LANGUAGE TRANSLATION
+// ADVANCED TRANSLATION ENGINE
 // ============================================================================
 
 function translateText($text, $targetLanguage, $apiKey) {
     if (empty($apiKey) || empty($text)) return null;
     
-    $prompt = "Translate the following text to $targetLanguage. Only provide the translation, no explanations:\n\n$text";
+    $prompt = "Translate the following text to $targetLanguage. Only provide the translation, no explanations or additional text:\n\n$text";
     
-    $url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={$apiKey}";
+    $url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={$apiKey}";
     $data = ['contents' => [['parts' => [['text' => $prompt]]]]];
     
     $ch = curl_init();
@@ -576,18 +1021,388 @@ function translateText($text, $targetLanguage, $apiKey) {
     return null;
 }
 
-function parseTranslateCommand($text) {
-    if (preg_match('/^\/translate\s+(.+)\s+to\s+([a-zA-Z]+)$/i', $text, $matches)) {
-        return ['text' => trim($matches[1]), 'language' => trim($matches[2])];
+function detectLanguage($text, $apiKey) {
+    if (empty($apiKey) || empty($text)) return 'unknown';
+    
+    $prompt = "Detect the language of this text and respond with ONLY the language name in English (e.g., 'Spanish', 'French', 'Arabic'). Text: $text";
+    
+    $url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={$apiKey}";
+    $data = ['contents' => [['parts' => [['text' => $prompt]]]]];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10,
+        CURLOPT_SSL_VERIFYPEER => true
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode === 200) {
+        $result = json_decode($response, true);
+        if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
+            return trim($result['candidates'][0]['content']['parts'][0]['text']);
+        }
     }
-    if (preg_match('/^\/translate\s+([a-zA-Z]+)\s+(.+)$/i', $text, $matches)) {
-        return ['text' => trim($matches[2]), 'language' => trim($matches[1])];
-    }
-    return null;
+    return 'unknown';
 }
 
 // ============================================================================
-// WEB SEARCH INTEGRATION
+// DYNAMIC AI PERSONALITY ENGINE
+// ============================================================================
+
+function getPersonalityOptions() {
+    return [
+        'professional' => [
+            'tone' => 'formal and precise',
+            'style' => 'structured and detailed',
+            'emoji_usage' => 'minimal',
+            'description' => 'Professional, formal, and accurate'
+        ],
+        'casual' => [
+            'tone' => 'friendly and relaxed',
+            'style' => 'conversational and warm',
+            'emoji_usage' => 'moderate',
+            'description' => 'Friendly, casual, and conversational'
+        ],
+        'humorous' => [
+            'tone' => 'witty and entertaining',
+            'style' => 'playful with jokes',
+            'emoji_usage' => 'frequent',
+            'description' => 'Funny and entertaining while helpful'
+        ],
+        'technical' => [
+            'tone' => 'expert and analytical',
+            'style' => 'detailed with terminology',
+            'emoji_usage' => 'rare',
+            'description' => 'Technical terminology and detailed explanations'
+        ],
+        'simple' => [
+            'tone' => 'clear and straightforward',
+            'style' => 'easy to understand',
+            'emoji_usage' => 'helpful',
+            'description' => 'Simple and clear for beginners'
+        ],
+        'empathetic' => [
+            'tone' => 'caring and understanding',
+            'style' => 'supportive and warm',
+            'emoji_usage' => 'heartfelt',
+            'description' => 'Empathetic and emotionally supportive'
+        ],
+        'creative' => [
+            'tone' => 'imaginative and inspired',
+            'style' => 'artistic and unique',
+            'emoji_usage' => 'expressive',
+            'description' => 'Creative and imaginative approaches'
+        ]
+    ];
+}
+
+function getUserPersonality($userId) {
+    $file = AI_PERSONALITY_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    if (!file_exists($file)) {
+        return [
+            'tone' => 'professional',
+            'style' => 'balanced',
+            'custom_instructions' => ''
+        ];
+    }
+    $data = aiLoadJSON($file);
+    return is_array($data) ? $data : ['tone' => 'professional', 'style' => 'balanced', 'custom_instructions' => ''];
+}
+
+function setUserPersonality($userId, $tone, $style, $customInstructions = '') {
+    $file = AI_PERSONALITY_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $data = [
+        'tone' => $tone,
+        'style' => $style,
+        'custom_instructions' => $customInstructions,
+        'updated' => date('Y-m-d H:i:s')
+    ];
+    aiSaveJSON($file, $data);
+    return true;
+}
+
+function getPersonalityPrompt($personality) {
+    $options = getPersonalityOptions();
+    $selectedOption = $options[$personality['tone']] ?? $options['professional'];
+    
+    $prompt = "Respond with a {$selectedOption['tone']} tone. ";
+    $prompt .= "Use a {$selectedOption['style']} writing style. ";
+    $prompt .= "Emoji usage: {$selectedOption['emoji_usage']}. ";
+    
+    if (!empty($personality['custom_instructions'])) {
+        $prompt .= "Additional instructions: {$personality['custom_instructions']} ";
+    }
+    
+    return $prompt;
+}
+
+// ============================================================================
+// ANALYTICS & USER BEHAVIOR INSIGHTS
+// ============================================================================
+
+function logUserBehavior($userId, $action, $metadata = []) {
+    $behaviorFile = AI_ANALYTICS_DIR . '/behavior_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $behaviors = file_exists($behaviorFile) ? aiLoadJSON($behaviorFile) : [];
+    
+    $behaviors[] = [
+        'action' => $action,
+        'metadata' => $metadata,
+        'timestamp' => date('Y-m-d H:i:s'),
+        'hour' => (int)date('H'),
+        'day_of_week' => date('l')
+    ];
+    
+    if (count($behaviors) > 500) {
+        $behaviors = array_slice($behaviors, -500);
+    }
+    
+    aiSaveJSON($behaviorFile, $behaviors);
+}
+
+function getUserBehaviorInsights($userId) {
+    $behaviorFile = AI_ANALYTICS_DIR . '/behavior_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    if (!file_exists($behaviorFile)) return null;
+    
+    $behaviors = aiLoadJSON($behaviorFile);
+    if (empty($behaviors)) return null;
+    
+    $insights = [
+        'total_actions' => count($behaviors),
+        'most_active_hour' => 0,
+        'most_active_day' => '',
+        'action_distribution' => [],
+        'average_session_length' => 0,
+        'last_30_days_activity' => 0
+    ];
+    
+    $hourCounts = array_fill(0, 24, 0);
+    $dayCounts = [];
+    $actionCounts = [];
+    
+    $thirtyDaysAgo = strtotime('-30 days');
+    $recentActivity = 0;
+    
+    foreach ($behaviors as $behavior) {
+        $hour = $behavior['hour'] ?? 0;
+        $day = $behavior['day_of_week'] ?? 'Unknown';
+        $action = $behavior['action'] ?? 'unknown';
+        
+        $hourCounts[$hour]++;
+        $dayCounts[$day] = ($dayCounts[$day] ?? 0) + 1;
+        $actionCounts[$action] = ($actionCounts[$action] ?? 0) + 1;
+        
+        if (strtotime($behavior['timestamp']) > $thirtyDaysAgo) {
+            $recentActivity++;
+        }
+    }
+    
+    $insights['most_active_hour'] = array_keys($hourCounts, max($hourCounts))[0];
+    arsort($dayCounts);
+    $insights['most_active_day'] = array_key_first($dayCounts) ?? 'Unknown';
+    $insights['action_distribution'] = $actionCounts;
+    $insights['last_30_days_activity'] = $recentActivity;
+    
+    return $insights;
+}
+
+function getSystemAnalytics() {
+    $analytics = [
+        'total_users' => 0,
+        'active_users_today' => 0,
+        'active_users_week' => 0,
+        'active_users_month' => 0,
+        'total_messages' => 0,
+        'total_conversations' => 0,
+        'avg_messages_per_user' => 0,
+        'popular_features' => [],
+        'peak_usage_hours' => [],
+        'user_retention' => 0
+    ];
+    
+    $userFiles = glob(AI_USERS_DIR . '/*.json') ?: [];
+    $analytics['total_users'] = count($userFiles);
+    
+    $convFiles = glob(AI_CONVERSATIONS_DIR . '/*.json') ?: [];
+    $analytics['total_conversations'] = count($convFiles);
+    
+    $totalMessages = 0;
+    $today = date('Y-m-d');
+    $weekAgo = date('Y-m-d', strtotime('-7 days'));
+    $monthAgo = date('Y-m-d', strtotime('-30 days'));
+    
+    $activeToday = 0;
+    $activeWeek = 0;
+    $activeMonth = 0;
+    
+    foreach ($userFiles as $file) {
+        $userId = basename($file, '.json');
+        $prefs = getUserPreferences($userId);
+        $lastActive = $prefs['last_active'] ?? '';
+        
+        if (strpos($lastActive, $today) === 0) $activeToday++;
+        if ($lastActive >= $weekAgo) $activeWeek++;
+        if ($lastActive >= $monthAgo) $activeMonth++;
+    }
+    
+    foreach ($convFiles as $file) {
+        $data = aiLoadJSON($file);
+        $totalMessages += is_array($data) ? count($data) : 0;
+    }
+    
+    $analytics['active_users_today'] = $activeToday;
+    $analytics['active_users_week'] = $activeWeek;
+    $analytics['active_users_month'] = $activeMonth;
+    $analytics['total_messages'] = $totalMessages;
+    $analytics['avg_messages_per_user'] = $analytics['total_users'] > 0 ? 
+        round($totalMessages / $analytics['total_users'], 2) : 0;
+    
+    return $analytics;
+}
+
+// ============================================================================
+// CONTENT MODERATION SYSTEM
+// ============================================================================
+
+function moderateContent($text, $userId) {
+    $bannedWords = ['spam', 'scam', 'fraud', 'illegal'];
+    $suspiciousPatterns = [
+        '/(?:buy|sell|trade)\s+(?:drugs|weapons)/i',
+        '/click\s+(?:here|this)\s+link/i',
+        '/(?:earn|make)\s+\$\d+\s+(?:fast|quick)/i'
+    ];
+    
+    $textLower = strtolower($text);
+    $flags = [];
+    
+    foreach ($bannedWords as $word) {
+        if (strpos($textLower, $word) !== false) {
+            $flags[] = "Contains banned word: $word";
+        }
+    }
+    
+    foreach ($suspiciousPatterns as $pattern) {
+        if (preg_match($pattern, $text)) {
+            $flags[] = "Matches suspicious pattern";
+        }
+    }
+    
+    if (!empty($flags)) {
+        logModeration($userId, $text, $flags);
+        return [
+            'passed' => false,
+            'flags' => $flags
+        ];
+    }
+    
+    return ['passed' => true, 'flags' => []];
+}
+
+function logModeration($userId, $content, $flags) {
+    $modFile = AI_MODERATION_DIR . '/moderation_' . date('Y-m-d') . '.json';
+    $logs = file_exists($modFile) ? aiLoadJSON($modFile) : [];
+    
+    $logs[] = [
+        'user_id' => $userId,
+        'content' => substr($content, 0, 200),
+        'flags' => $flags,
+        'timestamp' => date('Y-m-d H:i:s')
+    ];
+    
+    if (count($logs) > 100) {
+        $logs = array_slice($logs, -100);
+    }
+    
+    aiSaveJSON($modFile, $logs);
+    
+    // Notify owner of serious flags
+    if (!empty($flags)) {
+        sendNotificationToOwner("🚨 Content moderation flag!\n\nUser: $userId\nFlags: " . implode(', ', $flags), 'high');
+    }
+}
+
+// ============================================================================
+// RATE LIMITING WITH TIERS
+// ============================================================================
+
+function getUserTier($userId) {
+    $tierFile = AI_USERS_DIR . '/tiers.json';
+    $tiers = file_exists($tierFile) ? aiLoadJSON($tierFile) : [];
+    return $tiers[(string)$userId] ?? 'free';
+}
+
+function setUserTier($userId, $tier) {
+    $tierFile = AI_USERS_DIR . '/tiers.json';
+    $tiers = file_exists($tierFile) ? aiLoadJSON($tierFile) : [];
+    $tiers[(string)$userId] = $tier;
+    return aiSaveJSON($tierFile, $tiers);
+}
+
+function getRateLimits($tier) {
+    $limits = [
+        'free' => ['messages_per_hour' => 20, 'messages_per_day' => 100],
+        'supporter' => ['messages_per_hour' => 50, 'messages_per_day' => 500],
+        'premium' => ['messages_per_hour' => 200, 'messages_per_day' => 2000],
+        'unlimited' => ['messages_per_hour' => 9999, 'messages_per_day' => 99999]
+    ];
+    return $limits[$tier] ?? $limits['free'];
+}
+
+function checkRateLimit($userId) {
+    $tier = getUserTier($userId);
+    $limits = getRateLimits($tier);
+    
+    $rateLimitFile = AI_DATA_DIR . '/rate_limits_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $data = file_exists($rateLimitFile) ? aiLoadJSON($rateLimitFile) : [
+        'hourly' => ['count' => 0, 'reset' => time() + 3600],
+        'daily' => ['count' => 0, 'reset' => strtotime('tomorrow')]
+    ];
+    
+    $now = time();
+    
+    if ($now >= $data['hourly']['reset']) {
+        $data['hourly'] = ['count' => 0, 'reset' => $now + 3600];
+    }
+    if ($now >= $data['daily']['reset']) {
+        $data['daily'] = ['count' => 0, 'reset' => strtotime('tomorrow')];
+    }
+    
+    if ($data['hourly']['count'] >= $limits['messages_per_hour']) {
+        return [
+            'allowed' => false,
+            'reason' => 'hourly_limit',
+            'reset' => $data['hourly']['reset']
+        ];
+    }
+    
+    if ($data['daily']['count'] >= $limits['messages_per_day']) {
+        return [
+            'allowed' => false,
+            'reason' => 'daily_limit',
+            'reset' => $data['daily']['reset']
+        ];
+    }
+    
+    $data['hourly']['count']++;
+    $data['daily']['count']++;
+    aiSaveJSON($rateLimitFile, $data);
+    
+    return [
+        'allowed' => true,
+        'remaining_hourly' => $limits['messages_per_hour'] - $data['hourly']['count'],
+        'remaining_daily' => $limits['messages_per_day'] - $data['daily']['count']
+    ];
+}
+
+// ============================================================================
+// WEB SEARCH & CACHING
 // ============================================================================
 
 function webSearch($query, $limit = 5) {
@@ -599,7 +1414,7 @@ function webSearch($query, $limit = 5) {
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => 10,
-        CURLOPT_USERAGENT => 'AI Bot/1.0',
+        CURLOPT_USERAGENT => 'AI Bot/2.0',
         CURLOPT_SSL_VERIFYPEER => true
     ]);
     
@@ -637,44 +1452,37 @@ function webSearch($query, $limit = 5) {
     return $results;
 }
 
-function formatSearchResults($results, $query) {
-    if (empty($results)) {
-        return "No results found for: $query";
-    }
+function getCachedResponse($prompt) {
+    $cacheKey = hash('sha256', trim(strtolower($prompt)));
+    $cacheFile = AI_CACHE_DIR . '/' . $cacheKey . '.cache';
     
-    $formatted = "🔍 <b>Search Results for:</b> <i>$query</i>\n";
-    $formatted .= str_repeat("━", 30) . "\n\n";
-    
-    foreach (array_slice($results, 0, 4) as $i => $result) {
-        $num = $i + 1;
-        $snippet = substr($result['snippet'], 0, 200);
-        $formatted .= "📌 <b>Result $num:</b>\n";
-        $formatted .= "$snippet\n\n";
-    }
-    
-    $formatted .= str_repeat("━", 30) . "\n";
-    $formatted .= "🌐 <i>Powered by Web Search</i>";
-    
-    return $formatted;
-}
-
-function parseSearchCommand($text) {
-    $patterns = [
-        '/^\/search\s+(.+)$/i',
-        '/^search\s+(?:for|the\s+web\s+for)?\s*(.+)$/i',
-        '/^(?:google|look\s+up|find)\s+(.+)$/i'
-    ];
-    
-    foreach ($patterns as $pattern) {
-        if (preg_match($pattern, $text, $matches)) {
-            return trim($matches[1]);
+    if (file_exists($cacheFile)) {
+        $cached = aiLoadJSON($cacheFile);
+        if ($cached && (time() - ($cached['timestamp'] ?? 0)) < 3600) {
+            return $cached['response'] ?? null;
         }
     }
+    
     return null;
 }
 
+function setCachedResponse($prompt, $response) {
+    if (!is_string($response) || strlen($response) < 10) return;
+    
+    $cacheKey = hash('sha256', trim(strtolower($prompt)));
+    $cacheFile = AI_CACHE_DIR . '/' . $cacheKey . '.cache';
+    
+    $data = [
+        'prompt' => $prompt,
+        'response' => $response,
+        'timestamp' => time()
+    ];
+    
+    aiSaveJSON($cacheFile, $data);
+}
+
 // ============================================================================
-// ADMIN MANAGEMENT SYSTEM
+// ADMIN MANAGEMENT FUNCTIONS
 // ============================================================================
 
 function getAllUsers() {
@@ -683,7 +1491,10 @@ function getAllUsers() {
     if (!$files) return $users;
     
     foreach ($files as $file) {
-        $userId = basename($file, '.json');
+        $basename = basename($file, '.json');
+        if ($basename === 'tiers') continue;
+        
+        $userId = $basename;
         $data = aiLoadJSON($file);
         $prefs = getUserPreferences($userId);
         $convFile = getConversationFile($userId);
@@ -695,41 +1506,12 @@ function getAllUsers() {
             'messages' => $msgCount,
             'last_active' => $prefs['last_active'] ?? 'Never',
             'blocked' => $data['blocked'] ?? false,
+            'tier' => getUserTier($userId),
             'preferred_language' => $prefs['preferred_language'] ?? 'English'
         ];
     }
     
     return $users;
-}
-
-function getSystemStats() {
-    $convFiles = glob(AI_CONVERSATIONS_DIR . '/*.json') ?: [];
-    $userFiles = glob(AI_USERS_DIR . '/*.json') ?: [];
-    $prefFiles = glob(AI_PREFERENCES_DIR . '/*.json') ?: [];
-    
-    $totalMessages = 0;
-    foreach ($convFiles as $file) {
-        $data = aiLoadJSON($file);
-        $totalMessages += is_array($data) ? count($data) : 0;
-    }
-    
-    $cacheFiles = glob(AI_CACHE_DIR . '/*.cache') ?: [];
-    $cacheSize = 0;
-    foreach ($cacheFiles as $file) {
-        $cacheSize += filesize($file);
-    }
-    
-    return [
-        'total_users' => count($userFiles),
-        'total_conversations' => count($convFiles),
-        'total_messages' => $totalMessages,
-        'users_with_preferences' => count($prefFiles),
-        'cache_entries' => count($cacheFiles),
-        'cache_size_kb' => round($cacheSize / 1024, 2),
-        'server_time' => date('Y-m-d H:i:s'),
-        'php_version' => PHP_VERSION,
-        'memory_usage_mb' => round(memory_get_usage() / 1024 / 1024, 2)
-    ];
 }
 
 function blockUser($userId) {
@@ -755,28 +1537,7 @@ function isUserBlocked($userId) {
     return $data['blocked'] ?? false;
 }
 
-function logUserActivity($userId, $action, $details = '') {
-    $file = AI_USERS_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
-    $data = file_exists($file) ? aiLoadJSON($file) : [];
-    
-    if (!isset($data['activity_log'])) $data['activity_log'] = [];
-    $data['activity_log'][] = [
-        'action' => $action,
-        'details' => $details,
-        'timestamp' => date('Y-m-d H:i:s')
-    ];
-    
-    if (count($data['activity_log']) > 100) {
-        $data['activity_log'] = array_slice($data['activity_log'], -100);
-    }
-    
-    $data['last_activity'] = date('Y-m-d H:i:s');
-    $data['total_actions'] = ($data['total_actions'] ?? 0) + 1;
-    
-    return aiSaveJSON($file, $data);
-}
-
-function broadcastMessage($message, $botToken) {
+function broadcastMessage($message, $botToken, $excludeBlocked = true) {
     $userFiles = glob(AI_CONVERSATIONS_DIR . '/*.json') ?: [];
     $sent = 0;
     $failed = 0;
@@ -784,234 +1545,21 @@ function broadcastMessage($message, $botToken) {
     foreach ($userFiles as $file) {
         $userId = basename($file, '.json');
         if (!is_numeric($userId)) continue;
-        if (isUserBlocked($userId)) continue;
+        if ($excludeBlocked && isUserBlocked($userId)) continue;
         
         if (sendTelegramMessage($userId, $message, $botToken)) {
             $sent++;
         } else {
             $failed++;
         }
-        usleep(100000);
+        usleep(100000); // Rate limiting
     }
     
     return ['sent' => $sent, 'failed' => $failed];
 }
 
-function clearUserData($userId) {
-    $files = [
-        getConversationFile($userId),
-        AI_PERSONALITY_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json',
-        AI_PREFERENCES_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json',
-        AI_USERS_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json'
-    ];
-    
-    $deleted = 0;
-    foreach ($files as $file) {
-        if (file_exists($file) && @unlink($file)) {
-            $deleted++;
-        }
-    }
-    return $deleted;
-}
-
-function getAdminDashboardData() {
-    return [
-        'stats' => getSystemStats(),
-        'users' => getAllUsers(),
-        'recent_activity' => getRecentActivity(20)
-    ];
-}
-
-function getRecentActivity($limit = 20) {
-    $activity = [];
-    $userFiles = glob(AI_USERS_DIR . '/*.json') ?: [];
-    
-    foreach ($userFiles as $file) {
-        $data = aiLoadJSON($file);
-        if (isset($data['activity_log'])) {
-            $userId = basename($file, '.json');
-            foreach (array_slice($data['activity_log'], -5) as $log) {
-                $log['user_id'] = $userId;
-                $activity[] = $log;
-            }
-        }
-    }
-    
-    usort($activity, function($a, $b) {
-        return strtotime($b['timestamp'] ?? 0) - strtotime($a['timestamp'] ?? 0);
-    });
-    
-    return array_slice($activity, 0, $limit);
-}
-
 // ============================================================================
-// RICH FORMATTING
-// ============================================================================
-
-function formatRichResponse($response, $type = 'ai') {
-    $divider = str_repeat("━", 28);
-    
-    switch ($type) {
-        case 'ai':
-            return "💡 <b>✨ AI Response ✨</b>\n$divider\n\n📝 $response\n\n$divider\n✓ <i>Response complete</i>";
-        case 'translation':
-            return "🌐 <b>Translation</b>\n$divider\n\n📝 $response\n\n$divider\n✓ <i>Translation complete</i>";
-        case 'search':
-            return $response;
-        case 'image':
-            return "🎨 <b>✨ Image Analysis ✨</b>\n$divider\n\n📸 $response\n\n$divider\n✓ <i>Analysis complete</i>";
-        case 'admin':
-            return "🔐 <b>Admin Panel</b>\n$divider\n\n$response\n\n$divider";
-        case 'memory':
-            return "🧠 <b>Memory Updated</b>\n$divider\n\n✅ $response\n\n$divider";
-        default:
-            return $response;
-    }
-}
-
-// ============================================================================
-// STREAMING RESPONSE HANDLER
-// ============================================================================
-
-function sendStreamingResponse($chatId, $response, $botToken, $msgId = null) {
-    $chunks = splitResponseIntoChunks($response, 100);
-    $fullResponse = "";
-    
-    foreach ($chunks as $i => $chunk) {
-        $fullResponse .= $chunk;
-        $displayText = $fullResponse;
-        
-        if ($i < count($chunks) - 1) {
-            $displayText .= " ▌";
-        }
-        
-        if ($msgId) {
-            editTelegramMessage($chatId, $msgId, $displayText, $botToken);
-        }
-        usleep(50000);
-    }
-    
-    return $fullResponse;
-}
-
-function splitResponseIntoChunks($text, $chunkSize = 100) {
-    $words = explode(' ', $text);
-    $chunks = [];
-    $current = '';
-    
-    foreach ($words as $word) {
-        if (strlen($current) + strlen($word) + 1 > $chunkSize) {
-            if (!empty($current)) {
-                $chunks[] = $current;
-            }
-            $current = $word;
-        } else {
-            $current .= (empty($current) ? '' : ' ') . $word;
-        }
-    }
-    
-    if (!empty($current)) {
-        $chunks[] = $current;
-    }
-    
-    return $chunks;
-}
-
-// ============================================================================
-// PERSONALITY SYSTEM
-// ============================================================================
-
-function getUserPersonality($userId) {
-    $file = AI_PERSONALITY_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
-    if (!file_exists($file)) return ['tone' => 'professional', 'style' => 'balanced'];
-    $data = json_decode(file_get_contents($file), true);
-    return is_array($data) ? $data : ['tone' => 'professional', 'style' => 'balanced'];
-}
-
-function setUserPersonality($userId, $tone, $style) {
-    $file = AI_PERSONALITY_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
-    $data = ['tone' => $tone, 'style' => $style, 'updated' => date('Y-m-d H:i:s')];
-    file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT));
-    return true;
-}
-
-function getPersonalityPrompt($personality) {
-    $tones = [
-        'professional' => 'Be professional, formal, and accurate.',
-        'casual' => 'Be friendly, casual, and conversational.',
-        'humorous' => 'Be funny and entertaining while being helpful.',
-        'technical' => 'Use technical terminology and provide detailed explanations.',
-        'simple' => 'Explain things simply and clearly for beginners.'
-    ];
-    
-    $styles = [
-        'balanced' => 'Provide balanced viewpoints.',
-        'detailed' => 'Give comprehensive, detailed responses.',
-        'concise' => 'Keep responses short and to the point.',
-        'creative' => 'Use creative and imaginative approaches.'
-    ];
-    
-    $prompt = ($tones[$personality['tone']] ?? $tones['professional']) . ' ';
-    $prompt .= ($styles[$personality['style']] ?? $styles['balanced']);
-    
-    return $prompt;
-}
-
-// ============================================================================
-// RATE LIMITING & CACHING
-// ============================================================================
-
-function canMakeRequest() {
-    $quotaFile = AI_DATA_DIR . '/quota.json';
-    $quota = json_decode(@file_get_contents($quotaFile), true) ?? ['minute' => time(), 'requests' => 0];
-    $now = time();
-    
-    if ($now - $quota['minute'] >= 60) {
-        $quota['minute'] = $now;
-        $quota['requests'] = 0;
-        @file_put_contents($quotaFile, json_encode($quota));
-    }
-    
-    if ($quota['requests'] < 50) {
-        $quota['requests']++;
-        @file_put_contents($quotaFile, json_encode($quota));
-        return true;
-    }
-    
-    return false;
-}
-
-function getCachedResponse($prompt) {
-    $cacheKey = hash('sha256', trim(strtolower($prompt)));
-    $cacheFile = AI_CACHE_DIR . '/' . $cacheKey . '.cache';
-    
-    if (file_exists($cacheFile)) {
-        $cached = json_decode(@file_get_contents($cacheFile), true);
-        if ($cached && (time() - $cached['timestamp']) < 3600) {
-            return $cached['response'];
-        }
-    }
-    
-    return null;
-}
-
-function setCachedResponse($prompt, $response) {
-    if (!is_string($response) || strlen($response) < 10) return;
-    
-    $cacheKey = hash('sha256', trim(strtolower($prompt)));
-    $cacheFile = AI_CACHE_DIR . '/' . $cacheKey . '.cache';
-    
-    $data = [
-        'prompt' => $prompt,
-        'response' => $response,
-        'timestamp' => time()
-    ];
-    
-    @file_put_contents($cacheFile, json_encode($data));
-}
-
-// ============================================================================
-// QUESTION COMPLEXITY ANALYZER
+// GEMINI AI INTEGRATION
 // ============================================================================
 
 function analyzeQuestionComplexity($prompt, $context = '') {
@@ -1023,12 +1571,12 @@ function analyzeQuestionComplexity($prompt, $context = '') {
     elseif ($length > 200) $score += 20;
     elseif ($length > 100) $score += 10;
     
-    $professionalKeywords = ['business', 'strategy', 'roi', 'investment', 'proposal', 'report', 'case study', 'market analysis', 'financial', 'revenue'];
+    $professionalKeywords = ['business', 'strategy', 'investment', 'analysis', 'report'];
     foreach ($professionalKeywords as $keyword) {
         if (strpos($text, $keyword) !== false) $score += 20;
     }
     
-    $complexKeywords = ['analyze', 'compare', 'contrast', 'evaluate', 'research', 'explain deeply', 'why', 'how', 'mechanism', 'process'];
+    $complexKeywords = ['analyze', 'compare', 'explain', 'why', 'how'];
     foreach ($complexKeywords as $keyword) {
         if (strpos($text, $keyword) !== false) $score += 15;
     }
@@ -1052,18 +1600,23 @@ function getResponseLengthGuidance($complexity) {
     }
 }
 
-// ============================================================================
-// GEMINI AI INTEGRATION
-// ============================================================================
-
 function askGemini($prompt, $context = '', $imageBase64 = null, $imageMimeType = null) {
     global $GEMINI_API_KEY, $GOOGLE_IMAGEN_API_KEY, $HUGGINGFACE_API_KEY;
     
     if (empty($prompt)) return "I didn't receive a message. Please try again.";
     
+    // Check cache first
+    if (empty($imageBase64)) {
+        $cached = getCachedResponse($prompt);
+        if ($cached) return $cached;
+    }
+    
     if (!empty($GEMINI_API_KEY)) {
         $response = tryGeminiAPI($prompt, $context, $imageBase64, $imageMimeType, $GEMINI_API_KEY);
-        if ($response) return $response;
+        if ($response) {
+            if (empty($imageBase64)) setCachedResponse($prompt, $response);
+            return $response;
+        }
     }
     
     if (!empty($GOOGLE_IMAGEN_API_KEY)) {
@@ -1088,13 +1641,7 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
     $fullPrompt = $context ? "$context\n\nUser: $prompt" : $prompt;
     $fullPrompt .= "\n\n[SYSTEM INSTRUCTION] $lengthGuidance";
     
-    if ($complexity < 40) {
-        $models = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash'];
-    } elseif ($complexity < 70) {
-        $models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
-    } else {
-        $models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
-    }
+    $models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
     
     foreach ($models as $model) {
         $url = "https://generativelanguage.googleapis.com/v1/models/{$model}:generateContent?key={$apiKey}";
@@ -1139,7 +1686,7 @@ function tryHuggingFaceAPI($prompt, $context = '', $apiKey = null) {
     if (empty($apiKey)) return null;
     
     $fullPrompt = $context ? "$context\n\nUser: $prompt" : "User: $prompt";
-    $url = 'https://router.huggingface.co/models/gpt2';
+    $url = 'https://api-inference.huggingface.co/models/gpt2';
     $data = ['inputs' => $fullPrompt];
     
     $ch = curl_init();
@@ -1196,16 +1743,12 @@ function getSmartFallbackResponse($question) {
     return "🤖 I'm here to help! I can answer questions, provide information, and assist with various topics. What would you like to know?";
 }
 
-// ============================================================================
-// IMAGE ANALYSIS
-// ============================================================================
-
-function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze this image") {
+function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze this image in detail") {
     global $GEMINI_API_KEY;
     
     if (empty($GEMINI_API_KEY)) return null;
     
-    $models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+    $models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
     
     foreach ($models as $model) {
         $url = "https://generativelanguage.googleapis.com/v1/models/{$model}:generateContent?key={$GEMINI_API_KEY}";
@@ -1243,24 +1786,12 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
     return null;
 }
 
-// ============================================================================
-// MAIN AI RESPONSE FUNCTION
-// ============================================================================
-
 function getAIResponse($userId, $prompt, $context = '', $imageBase64 = null, $imageMimeType = null) {
     if (empty($userId)) $userId = 'unknown_' . uniqid();
     if (empty($prompt)) return "I didn't receive a message. Please try again.";
     
     if (strlen($prompt) > 10000) {
         return "⚠️ Your message is too long. Please keep it under 10,000 characters.";
-    }
-    
-    $promptLower = strtolower($prompt);
-    $imageKeywords = ['generate image', 'create image', 'make image', 'draw', 'create photo'];
-    foreach ($imageKeywords as $keyword) {
-        if (strpos($promptLower, $keyword) !== false) {
-            return "📸 Image generation will be added soon! For now, I can help with questions, analysis, and text-based tasks.";
-        }
     }
     
     $response = askGemini($prompt, $context, $imageBase64, $imageMimeType);
@@ -1277,89 +1808,215 @@ function getAIResponse($userId, $prompt, $context = '', $imageBase64 = null, $im
 }
 
 // ============================================================================
-// EMBEDDED HTML DASHBOARDS
+// RICH FORMATTING
 // ============================================================================
 
-function getPreviewHTML() {
-    $previewFile = __DIR__ . '/preview.html';
-    if (file_exists($previewFile)) {
-        return file_get_contents($previewFile);
+function formatRichResponse($response, $type = 'ai') {
+    $divider = str_repeat("─", 28);
+    
+    switch ($type) {
+        case 'ai':
+            return "💡 <b>✨ AI Response ✨</b>\n$divider\n\n💬 $response\n\n$divider\n✓ <i>Response complete</i>";
+        case 'translation':
+            return "🌐 <b>Translation</b>\n$divider\n\n💬 $response\n\n$divider\n✓ <i>Translation complete</i>";
+        case 'search':
+            return $response;
+        case 'image':
+            return "🎨 <b>✨ Image Analysis ✨</b>\n$divider\n\n📸 $response\n\n$divider\n✓ <i>Analysis complete</i>";
+        case 'admin':
+            return "🔐 <b>Admin Panel</b>\n$divider\n\n$response\n\n$divider";
+        case 'memory':
+            return "🧠 <b>Memory Updated</b>\n$divider\n\n✅ $response\n\n$divider";
+        case 'donation':
+            return "💝 <b>Support Us</b>\n$divider\n\n$response\n\n$divider";
+        default:
+            return $response;
     }
-    return '<html><body><h1>AI Bot Dashboard</h1><p>Preview page not found. Please ensure preview.html exists.</p></body></html>';
 }
 
-function getAdminHTML() {
-    $adminFile = __DIR__ . '/admin.html';
-    if (file_exists($adminFile)) {
-        return file_get_contents($adminFile);
+function sendStreamingResponse($chatId, $response, $botToken, $msgId = null) {
+    $chunks = splitResponseIntoChunks($response, 100);
+    $fullResponse = "";
+    
+    foreach ($chunks as $i => $chunk) {
+        $fullResponse .= $chunk;
+        $displayText = $fullResponse;
+        
+        if ($i < count($chunks) - 1) {
+            $displayText .= " ▌";
+        }
+        
+        if ($msgId) {
+            editTelegramMessage($chatId, $msgId, $displayText, $botToken);
+        }
+        usleep(50000);
     }
-    return '<html><body><h1>Admin Dashboard</h1><p>Admin page not found. Please ensure admin.html exists.</p></body></html>';
+    
+    return $fullResponse;
 }
 
-function getAdminDashboardHTML() {
-    $dashboardFile = __DIR__ . '/admin_dashboard.html';
-    if (file_exists($dashboardFile)) {
-        return file_get_contents($dashboardFile);
+function splitResponseIntoChunks($text, $chunkSize = 100) {
+    $words = explode(' ', $text);
+    $chunks = [];
+    $current = '';
+    
+    foreach ($words as $word) {
+        if (strlen($current) + strlen($word) + 1 > $chunkSize) {
+            if (!empty($current)) {
+                $chunks[] = $current;
+            }
+            $current = $word;
+        } else {
+            $current .= (empty($current) ? '' : ' ') . $word;
+        }
     }
-    return '<html><body><h1>Advanced Admin Dashboard</h1><p>Dashboard page not found. Please ensure admin_dashboard.html exists.</p></body></html>';
+    
+    if (!empty($current)) {
+        $chunks[] = $current;
+    }
+    
+    return $chunks;
 }
 
 // ============================================================================
-// WEBHOOK HANDLER
+// REAL-TIME MONITORING
+// ============================================================================
+
+function logSystemMetrics() {
+    $metricsFile = AI_MONITORING_DIR . '/metrics_' . date('Y-m-d_H') . '.json';
+    $metrics = [
+        'timestamp' => date('Y-m-d H:i:s'),
+        'memory_usage' => memory_get_usage(true),
+        'peak_memory' => memory_get_peak_usage(true),
+        'active_users' => count(glob(AI_SESSIONS_DIR . '/*.json') ?: []),
+        'cache_size' => array_sum(array_map('filesize', glob(AI_CACHE_DIR . '/*.cache') ?: [])),
+        'error_count' => 0 // Will be updated by error handler
+    ];
+    
+    aiSaveJSON($metricsFile, $metrics);
+}
+
+// ============================================================================
+// WEBHOOK HANDLER - MAIN LOGIC
 // ============================================================================
 
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $method = $_SERVER['REQUEST_METHOD'];
 
-aiLog("[$method] $path");
+aiLog("[$method] $path", 'INFO');
 
 try {
-    // Main preview page
-    if ($path === '/' && $method === 'GET') {
-        header('Content-Type: text/html; charset=utf-8');
-        exit(getPreviewHTML());
-    }
-    
-    // Admin dashboard - requires ADMIN_TOKEN
-    if ($path === '/admin' && $method === 'GET') {
-        $adminToken = getenv('ADMIN_TOKEN') ?: '';
-        $providedToken = $_GET['token'] ?? '';
-        if (empty($adminToken) || $providedToken !== $adminToken) {
-            http_response_code(403);
-            exit(json_encode(['error' => 'Unauthorized. Admin token required.']));
-        }
-        header('Content-Type: text/html; charset=utf-8');
-        exit(getAdminHTML());
-    }
-    
-    // Advanced admin dashboard - requires ADMIN_TOKEN
-    if ($path === '/admin_dashboard' && $method === 'GET') {
-        $adminToken = getenv('ADMIN_TOKEN') ?: '';
-        $providedToken = $_GET['token'] ?? '';
-        if (empty($adminToken) || $providedToken !== $adminToken) {
-            http_response_code(403);
-            exit(json_encode(['error' => 'Unauthorized. Admin token required.']));
-        }
-        header('Content-Type: text/html; charset=utf-8');
-        exit(getAdminDashboardHTML());
-    }
-    
-    // API health check
+    // Health check
     if ($path === '/api/health' && $method === 'GET') {
         http_response_code(200);
         exit(json_encode([
             'status' => 'ok',
-            'bot' => 'AI Bot Standalone',
-            'version' => '1.0.0'
+            'bot' => 'Advanced AI Bot',
+            'version' => '2.0.0',
+            'system_status' => getSystemStatus()
         ]));
     }
     
-    // Telegram Webhook
+    // Check system status first
+    if (!isSystemOperational() && $path === '/webhook') {
+        $status = getSystemStatus();
+        if ($status['maintenance_mode']) {
+            http_response_code(503);
+            exit(json_encode(['status' => 'maintenance', 'message' => $status['message']]));
+        }
+        if ($status['emergency_mode']) {
+            http_response_code(503);
+            exit(json_encode(['status' => 'emergency', 'message' => $status['message']]));
+        }
+    }
+    
+    // Webhook handler
     if ($path === '/webhook' && $method === 'POST') {
         $rawInput = file_get_contents('php://input');
         $update = json_decode($rawInput, true);
         
-        if (!is_array($update) || !isset($update['message'])) {
+        if (!is_array($update)) {
+            http_response_code(200);
+            exit(json_encode(['status' => 'ok']));
+        }
+        
+        // Handle new chat members (bot added to group)
+        if (isset($update['message']['new_chat_members'])) {
+            $botInfo = getBotInfo($TELEGRAM_BOT_TOKEN);
+            if ($botInfo) {
+                foreach ($update['message']['new_chat_members'] as $member) {
+                    if ($member['id'] === $botInfo['id']) {
+                        handleNewGroupJoin($update['message'], $TELEGRAM_BOT_TOKEN);
+                        http_response_code(200);
+                        exit(json_encode(['status' => 'ok']));
+                    }
+                }
+            }
+        }
+        
+        // Handle Telegram Stars payment (pre-checkout query)
+        if (isset($update['pre_checkout_query'])) {
+            $preCheckout = $update['pre_checkout_query'];
+            $userId = $preCheckout['from']['id'];
+            $stars = $preCheckout['total_amount'];
+            
+            // Answer pre-checkout query
+            $answerUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/answerPreCheckoutQuery";
+            $answerData = [
+                'pre_checkout_query_id' => $preCheckout['id'],
+                'ok' => true
+            ];
+            
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $answerUrl,
+                CURLOPT_POST => 1,
+                CURLOPT_POSTFIELDS => json_encode($answerData),
+                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 5
+            ]);
+            curl_exec($ch);
+            curl_close($ch);
+            
+            http_response_code(200);
+            exit(json_encode(['status' => 'ok']));
+        }
+        
+        // Handle successful payment
+        if (isset($update['message']['successful_payment'])) {
+            $payment = $update['message']['successful_payment'];
+            $userId = $update['message']['from']['id'];
+            $chatId = $update['message']['chat']['id'];
+            $stars = $payment['total_amount'];
+            
+            // Record donation
+            recordDonation($userId, 0, 'stars', $stars);
+            
+            // Upgrade user tier based on stars
+            if ($stars >= 1000) {
+                setUserTier($userId, 'premium');
+                $tier = 'Premium';
+            } elseif ($stars >= 500) {
+                setUserTier($userId, 'supporter');
+                $tier = 'Supporter';
+            }
+            
+            $thankYouMsg = "🌟 <b>Thank You for Your Support!</b>\n\n";
+            $thankYouMsg .= "✨ You donated <b>$stars Telegram Stars</b>!\n\n";
+            if (isset($tier)) {
+                $thankYouMsg .= "🎉 You've been upgraded to <b>$tier</b> tier!\n\n";
+            }
+            $thankYouMsg .= "Your support helps keep this bot running and improving. 💙\n\n";
+            $thankYouMsg .= "Use /myinfo to see your new benefits!";
+            
+            sendTelegramMessage($chatId, formatRichResponse($thankYouMsg, 'donation'), $TELEGRAM_BOT_TOKEN);
+            
+            http_response_code(200);
+            exit(json_encode(['status' => 'ok']));
+        }
+        
+        if (!isset($update['message'])) {
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
         }
@@ -1374,11 +2031,11 @@ try {
             exit(json_encode(['status' => 'ok']));
         }
         
-        $isGroup = isGroupChat($message);
-        if ($isGroup && !shouldProcessGroupMessage($message, $TELEGRAM_BOT_TOKEN)) {
-            http_response_code(200);
-            exit(json_encode(['status' => 'ok']));
-        }
+        // Track device info
+        trackDeviceInfo($userId, $message);
+        
+        // Log metrics
+        logSystemMetrics();
         
         // Check if user is blocked
         if (isUserBlocked($userId)) {
@@ -1387,101 +2044,255 @@ try {
             exit(json_encode(['status' => 'ok']));
         }
         
-        // Log user activity
-        logUserActivity($userId, 'message', substr($text, 0, 50));
+        // Check rate limits
+        $rateLimit = checkRateLimit($userId);
+        if (!$rateLimit['allowed']) {
+            $resetTime = date('H:i', $rateLimit['reset']);
+            $reason = $rateLimit['reason'] === 'hourly_limit' ? 'hourly' : 'daily';
+            sendTelegramMessage($chatId, "⏱️ Rate limit reached! Your $reason limit has been exceeded. Resets at $resetTime.\n\nUpgrade your tier with /donate for higher limits!", $TELEGRAM_BOT_TOKEN);
+            http_response_code(200);
+            exit(json_encode(['status' => 'ok']));
+        }
         
-        // Handle commands
+        // Group chat handling
+        $isGroup = isGroupChat($message);
+        if ($isGroup && !shouldProcessGroupMessage($message, $TELEGRAM_BOT_TOKEN)) {
+            http_response_code(200);
+            exit(json_encode(['status' => 'ok']));
+        }
+        
+        // Log user behavior
+        logUserBehavior($userId, 'message_sent', ['text_length' => strlen($text), 'is_group' => $isGroup]);
+        
+        // MANDATORY PROFILE CHECK - Cannot bypass
+        $prefs = getUserPreferences($userId);
+        $profileComplete = isProfileComplete($userId);
+        
+        // Handle /start command
         if ($text === '/start') {
-            $prefs = getUserPreferences($userId);
-            
-            // Check if this is a first-time user (no name set)
-            if (empty($prefs['name'])) {
-                // Mark user as awaiting name input
+            if (!$profileComplete) {
                 $prefs['awaiting_name'] = true;
+                $prefs['awaiting_nationality'] = false;
+                $prefs['profile_complete'] = false;
                 saveUserPreferences($userId, $prefs);
                 
-                sendTelegramMessage($chatId, "👋 <b>Welcome to AI Bot!</b>\n\n🎯 Let's set up your profile!\n\n<b>Step 1:</b> Please tell me your name.\n\n💬 <i>Just type your name in the next message...</i>", $TELEGRAM_BOT_TOKEN);
+                sendTelegramMessage($chatId, "👋 <b>Welcome to Advanced AI Bot!</b>\n\n🎯 Let's set up your profile!\n\n<b>Step 1:</b> Please tell me your name.\n\n💬 <i>Just type your name in the next message...</i>", $TELEGRAM_BOT_TOKEN);
+            } else {
+                $name = $prefs['name'];
+                $welcomeMsg = "👋 Welcome back, <b>$name</b>!\n\n";
+                $welcomeMsg .= "<b>🎉 What's New:</b>\n";
+                $welcomeMsg .= "💝 Ko-fi & Telegram Stars donations\n";
+                $welcomeMsg .= "🌐 Advanced AI translation\n";
+                $welcomeMsg .= "🎭 Dynamic personality engine\n";
+                $welcomeMsg .= "📊 User behavior analytics\n";
+                $welcomeMsg .= "🧠 Mood detection\n";
+                $welcomeMsg .= "🔐 Enhanced security\n\n";
+                $welcomeMsg .= "Use /help for all commands!";
+                
+                sendTelegramMessage($chatId, $welcomeMsg, $TELEGRAM_BOT_TOKEN);
+            }
+            http_response_code(200);
+            exit(json_encode(['status' => 'ok']));
+        }
+        
+        // ENFORCE PROFILE COMPLETION - Block all other commands
+        if (!$profileComplete) {
+            // Handle name input
+            if (isset($prefs['awaiting_name']) && $prefs['awaiting_name'] === true) {
+                $name = trim($text);
+                
+                if (strlen($name) > 50) {
+                    sendTelegramMessage($chatId, "❌ Name is too long. Please keep it under 50 characters.", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                if (empty($name) || strlen($name) < 2) {
+                    sendTelegramMessage($chatId, "❌ Please provide a valid name (at least 2 characters).", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                $prefs['name'] = $name;
+                $prefs['awaiting_name'] = false;
+                $prefs['awaiting_nationality'] = true;
+                saveUserPreferences($userId, $prefs);
+                
+                sendTelegramMessage($chatId, "✅ Nice to meet you, <b>$name</b>!\n\n🌍 <b>Step 2:</b> What's your nationality/country?\n\n💬 <i>Example: Kenya, USA, UK, India, etc.</i>", $TELEGRAM_BOT_TOKEN);
+                
                 http_response_code(200);
                 exit(json_encode(['status' => 'ok']));
             }
             
-            // Existing user with name
-            $name = $prefs['name'];
-            sendTelegramMessage($chatId, "👋 Welcome back, <b>$name</b>!\n\n<b>Features:</b>\n🧠 Smart AI Responses\n📸 Image Analysis\n🌐 Language Translation\n🔍 Web Search\n🧠 Context Memory\n🎭 Custom Personality\n\nUse /help for all commands.", $TELEGRAM_BOT_TOKEN);
+            // Handle nationality input
+            if (isset($prefs['awaiting_nationality']) && $prefs['awaiting_nationality'] === true) {
+                $nationality = trim($text);
+                
+                if (strlen($nationality) > 50) {
+                    sendTelegramMessage($chatId, "❌ Please provide a shorter nationality name.", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                if (empty($nationality) || strlen($nationality) < 2) {
+                    sendTelegramMessage($chatId, "❌ Please provide a valid nationality.", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                $countryEmoji = getCountryFlagEmoji($nationality);
+                
+                $prefs['nationality'] = ucfirst($nationality);
+                $prefs['country_emoji'] = $countryEmoji;
+                $prefs['awaiting_nationality'] = false;
+                $prefs['profile_complete'] = true;
+                saveUserPreferences($userId, $prefs);
+                
+                $welcomeMsg = "✅ <b>Profile Complete!</b>\n";
+                $welcomeMsg .= str_repeat("─", 28) . "\n\n";
+                $welcomeMsg .= "✅ <b>Name:</b> {$prefs['name']}\n";
+                $welcomeMsg .= "🌍 <b>Nationality:</b> $countryEmoji {$prefs['nationality']}\n";
+                $welcomeMsg .= "🆔 <b>Telegram ID:</b> <code>$userId</code>\n";
+                $welcomeMsg .= "🎖️ <b>Tier:</b> " . ucfirst(getUserTier($userId)) . "\n\n";
+                $welcomeMsg .= "<b>🎉 What I can do for you:</b>\n";
+                $welcomeMsg .= "🧠 Answer questions intelligently\n";
+                $welcomeMsg .= "📸 Analyze images\n";
+                $welcomeMsg .= "🌐 Translate languages\n";
+                $welcomeMsg .= "🔍 Search the web\n";
+                $welcomeMsg .= "💭 Remember our conversations\n";
+                $welcomeMsg .= "🎭 Adapt to your preferred style\n";
+                $welcomeMsg .= "😊 Detect your mood\n\n";
+                $welcomeMsg .= "💬 <i>Try asking me anything to get started!</i>\n\n";
+                $welcomeMsg .= "Use /help to see all commands or /myinfo to view your profile.";
+                
+                sendTelegramMessage($chatId, $welcomeMsg, $TELEGRAM_BOT_TOKEN);
+                
+                // Notify owner of new user
+                $notifMsg = "🆕 New user registered!\n\n";
+                $notifMsg .= "👤 Name: {$prefs['name']}\n";
+                $notifMsg .= "🌍 From: $countryEmoji {$prefs['nationality']}\n";
+                $notifMsg .= "🆔 ID: $userId";
+                sendNotificationToOwner($notifMsg, 'normal');
+                
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            // If neither awaiting name nor nationality, something went wrong - restart
+            sendTelegramMessage($chatId, "⚠️ Please complete your profile first. Use /start to begin.", $TELEGRAM_BOT_TOKEN);
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
         }
         
+        // PROFILE COMPLETE - Handle all other commands
+        
+        // /donate command - Ko-fi + Telegram Stars
         if ($text === '/donate') {
+            if (!isFeatureEnabled('donations_enabled')) {
+                sendTelegramMessage($chatId, "⚠️ Donations are currently disabled.", $TELEGRAM_BOT_TOKEN);
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
             $donateMsg = "💝 <b>Support This Bot</b>\n";
-            $donateMsg .= str_repeat("━", 28) . "\n\n";
+            $donateMsg .= str_repeat("─", 28) . "\n\n";
             $donateMsg .= "Thank you for considering supporting this project! ❤️\n\n";
             $donateMsg .= "Your donations help keep the bot running and allow for continuous improvements.\n\n";
-            $donateMsg .= "Click the button below to donate via PayPal:\n\n";
+            $donateMsg .= "<b>🌟 Donation Tiers:</b>\n";
+            $donateMsg .= "• 100+ ⭐ = Supporter tier (50 msgs/hour)\n";
+            $donateMsg .= "• 500+ ⭐ = Premium tier (200 msgs/hour)\n\n";
+            $donateMsg .= "Choose your preferred method below:\n\n";
             $donateMsg .= "🙏 Every contribution is greatly appreciated!";
             
-            // Send message with inline PayPal button
-            $url = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/sendMessage";
-            $data = [
-                'chat_id' => (int)$chatId,
-                'text' => $donateMsg,
-                'parse_mode' => 'HTML',
-                'reply_markup' => json_encode([
-                    'inline_keyboard' => [[
-                        [
-                            'text' => '💰 Donate via PayPal',
-                            'url' => 'https://www.paypal.com/donate?hosted_button_id=XH7BK4ZX7LRY2'
-                        ]
-                    ]]
-                ])
+            $keyboard = [
+                'inline_keyboard' => [
+                    [
+                        ['text' => '💰 Donate via Ko-fi', 'url' => 'https://ko-fi.com/calvin_munene#checkoutModal']
+                    ],
+                    [
+                        ['text' => '⭐ 100 Stars (Supporter)', 'callback_data' => 'donate_100'],
+                        ['text' => '⭐ 500 Stars (Premium)', 'callback_data' => 'donate_500']
+                    ],
+                    [
+                        ['text' => '⭐ Custom Amount', 'callback_data' => 'donate_custom']
+                    ]
+                ]
             ];
             
-            $ch = curl_init();
-            curl_setopt_array($ch, [
-                CURLOPT_URL => $url,
-                CURLOPT_POST => 1,
-                CURLOPT_POSTFIELDS => json_encode($data),
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 10
-            ]);
-            curl_exec($ch);
-            curl_close($ch);
+            sendTelegramMessage($chatId, formatRichResponse($donateMsg, 'donation'), $TELEGRAM_BOT_TOKEN, json_encode($keyboard));
             
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
         }
         
+        // Handle other commands
         if ($text === '/help') {
             $helpMsg = "ℹ️ <b>Commands:</b>\n\n";
             $helpMsg .= "<b>Basic:</b>\n";
             $helpMsg .= "/start - Welcome message\n";
             $helpMsg .= "/help - Show this help\n";
             $helpMsg .= "/clear - Clear conversation\n";
-            $helpMsg .= "/donate - Support the bot\n\n";
+            $helpMsg .= "/donate - Support the bot 💝\n";
+            $helpMsg .= "/myinfo - View your profile\n\n";
             $helpMsg .= "<b>AI Features:</b>\n";
             $helpMsg .= "/ai [message] - Chat with AI\n";
-            $helpMsg .= "/translate [text] to [lang] - Translate text\n";
-            $helpMsg .= "/search [query] - Search the web\n\n";
+            $helpMsg .= "/translate [text] to [lang] - Translate\n";
+            $helpMsg .= "/search [query] - Web search\n";
+            $helpMsg .= "/personality [type] - Set AI style\n\n";
             $helpMsg .= "<b>Personalization:</b>\n";
-            $helpMsg .= "/personality [tone] - Set AI tone\n";
-            $helpMsg .= "/remember [info] - Save info about you\n";
-            $helpMsg .= "/myinfo - View your saved info\n";
-            $helpMsg .= "/forget - Clear your saved info\n\n";
-            $helpMsg .= "<b>Groups:</b> Use @ai or /ai to mention bot";
+            $helpMsg .= "/remember [info] - Save info\n";
+            $helpMsg .= "/forget - Clear saved data\n\n";
+            $helpMsg .= "<b>Your Tier:</b> " . ucfirst(getUserTier($userId)) . "\n";
+            $helpMsg .= "<b>Rate Limit:</b> {$rateLimit['remaining_hourly']} msgs left this hour";
             
             if (isAdmin($userId)) {
                 $helpMsg .= "\n\n<b>🔐 Admin Commands:</b>\n";
                 $helpMsg .= "/admin - Admin panel\n";
-                $helpMsg .= "/stats - System statistics\n";
-                $helpMsg .= "/users - List all users\n";
-                $helpMsg .= "/block [id] - Block user\n";
-                $helpMsg .= "/unblock [id] - Unblock user\n";
+                $helpMsg .= "/stats - System stats\n";
+                $helpMsg .= "/users - List users\n";
+                $helpMsg .= "/maintenance [on/off] - Toggle maintenance\n";
                 $helpMsg .= "/broadcast [msg] - Message all users\n";
-                $helpMsg .= "/clearuser [id] - Clear user data";
+                $helpMsg .= "/features - Manage feature flags";
             }
             
             sendTelegramMessage($chatId, $helpMsg, $TELEGRAM_BOT_TOKEN);
+            http_response_code(200);
+            exit(json_encode(['status' => 'ok']));
+        }
+        
+        if ($text === '/myinfo') {
+            $prefs = getUserPreferences($userId);
+            $tier = getUserTier($userId);
+            $insights = getUserBehaviorInsights($userId);
+            
+            $info = "👤 <b>Your Profile</b>\n" . str_repeat("─", 28) . "\n\n";
+            $info .= "🆔 <b>Telegram ID:</b> <code>{$prefs['telegram_id']}</code>\n";
+            $info .= "👤 <b>Name:</b> {$prefs['name']}\n";
+            
+            $countryEmoji = $prefs['country_emoji'] ?? '🌍';
+            $info .= "🌍 <b>Nationality:</b> $countryEmoji {$prefs['nationality']}\n";
+            $info .= "🌐 <b>Language:</b> {$prefs['preferred_language']}\n";
+            $info .= "🎖️ <b>Tier:</b> " . ucfirst($tier) . "\n";
+            $info .= "📅 <b>Member since:</b> " . date('M d, Y', strtotime($prefs['created'])) . "\n\n";
+            
+            if ($insights) {
+                $info .= "<b>📊 Your Activity:</b>\n";
+                $info .= "• Total actions: {$insights['total_actions']}\n";
+                $info .= "• Most active: {$insights['most_active_hour']}:00\n";
+                $info .= "• Favorite day: {$insights['most_active_day']}\n";
+                $info .= "• Last 30 days: {$insights['last_30_days_activity']} actions\n\n";
+            }
+            
+            if (!empty($prefs['remember_items'])) {
+                $info .= "<b>💭 Remembered items:</b>\n";
+                foreach (array_slice($prefs['remember_items'], -3) as $item) {
+                    $info .= "  • {$item['text']}\n";
+                }
+            }
+            
+            $info .= "\n" . str_repeat("─", 28);
+            
+            sendTelegramMessage($chatId, $info, $TELEGRAM_BOT_TOKEN);
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
         }
@@ -1493,267 +2304,101 @@ try {
             exit(json_encode(['status' => 'ok']));
         }
         
-        // Handle /myinfo command
-        if ($text === '/myinfo') {
-            $prefs = getUserPreferences($userId);
-            
-            $info = "👤 <b>Your Profile Information:</b>\n";
-            $info .= str_repeat("━", 28) . "\n\n";
-            $info .= "🆔 <b>Telegram ID:</b> <code>{$prefs['telegram_id']}</code>\n";
-            $info .= "👤 <b>Name:</b> " . ($prefs['name'] ?? '<i>Not set</i>') . "\n";
-            
-            if (!empty($prefs['nationality'])) {
-                $countryEmoji = $prefs['country_emoji'] ?? '🌍';
-                $info .= "🌍 <b>Nationality:</b> $countryEmoji {$prefs['nationality']}\n";
-            } else {
-                $info .= "🌍 <b>Nationality:</b> <i>Not set</i>\n";
-            }
-            
-            $info .= "🌐 <b>Language:</b> " . ($prefs['preferred_language'] ?? 'English') . "\n";
-            $info .= "📅 <b>Member since:</b> " . ($prefs['created'] ?? 'Unknown') . "\n\n";
-            
-            if (!empty($prefs['remember_items'])) {
-                $info .= "<b>💭 Remembered items:</b>\n";
-                foreach (array_slice($prefs['remember_items'], -5) as $item) {
-                    $info .= "  • {$item['text']}\n";
-                }
-            } else {
-                $info .= "<i>💭 No remembered items yet.</i>\n";
-            }
-            
-            $info .= "\n" . str_repeat("━", 28);
-            
-            sendTelegramMessage($chatId, $info, $TELEGRAM_BOT_TOKEN);
-            http_response_code(200);
-            exit(json_encode(['status' => 'ok']));
-        }
-        
-        // Handle /forget command
         if ($text === '/forget') {
             $file = AI_PREFERENCES_DIR . '/' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
-            if (file_exists($file)) @unlink($file);
-            sendTelegramMessage($chatId, formatRichResponse("All your saved preferences have been cleared!", 'memory'), $TELEGRAM_BOT_TOKEN);
+            $prefs = getUserPreferences($userId);
+            $prefs['remember_items'] = [];
+            saveUserPreferences($userId, $prefs);
+            sendTelegramMessage($chatId, formatRichResponse("All remembered items cleared!", 'memory'), $TELEGRAM_BOT_TOKEN);
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
         }
         
-        // Handle /remember command
-        if (strpos($text, '/remember') === 0) {
-            $content = trim(substr($text, 9));
-            if (empty($content)) {
-                sendTelegramMessage($chatId, "❌ Please provide something to remember.\nExample: /remember I prefer short answers", $TELEGRAM_BOT_TOKEN);
-            } else {
-                $parsed = parseRememberCommand($content);
-                if ($parsed) {
-                    if ($parsed['type'] === 'name') {
-                        updateUserPreference($userId, 'name', $parsed['value']);
-                        sendTelegramMessage($chatId, formatRichResponse("I'll remember your name is {$parsed['value']}!", 'memory'), $TELEGRAM_BOT_TOKEN);
-                    } elseif ($parsed['type'] === 'language') {
-                        updateUserPreference($userId, 'preferred_language', ucfirst($parsed['value']));
-                        sendTelegramMessage($chatId, formatRichResponse("I'll respond in {$parsed['value']} from now on!", 'memory'), $TELEGRAM_BOT_TOKEN);
-                    } else {
-                        addRememberItem($userId, $parsed['value']);
-                        sendTelegramMessage($chatId, formatRichResponse("I'll remember: {$parsed['value']}", 'memory'), $TELEGRAM_BOT_TOKEN);
-                    }
-                } else {
-                    addRememberItem($userId, $content);
-                    sendTelegramMessage($chatId, formatRichResponse("I'll remember: $content", 'memory'), $TELEGRAM_BOT_TOKEN);
-                }
-            }
-            http_response_code(200);
-            exit(json_encode(['status' => 'ok']));
-        }
-        
-        // Handle /translate command
-        if (strpos($text, '/translate') === 0) {
-            $parsed = parseTranslateCommand($text);
-            if (!$parsed) {
-                sendTelegramMessage($chatId, "❌ Usage: /translate [text] to [language]\nExample: /translate Hello to Spanish", $TELEGRAM_BOT_TOKEN);
-            } else {
-                sendChatAction($chatId, 'typing', $TELEGRAM_BOT_TOKEN);
-                $msgId = sendTelegramMessage($chatId, "🌐 <b>Translating</b>●●●", $TELEGRAM_BOT_TOKEN);
-                
-                $translation = translateText($parsed['text'], $parsed['language'], $GEMINI_API_KEY);
-                
-                if ($translation) {
-                    $result = "<b>Original:</b>\n{$parsed['text']}\n\n<b>➡️ {$parsed['language']}:</b>\n$translation";
-                    $response = formatRichResponse($result, 'translation');
-                } else {
-                    $response = "❌ Translation failed. Please try again.";
-                }
-                
-                if ($msgId && is_numeric($msgId)) {
-                    editTelegramMessage($chatId, $msgId, $response, $TELEGRAM_BOT_TOKEN);
-                } else {
-                    sendTelegramMessage($chatId, $response, $TELEGRAM_BOT_TOKEN);
-                }
-            }
-            http_response_code(200);
-            exit(json_encode(['status' => 'ok']));
-        }
-        
-        // Handle /search command
-        if (strpos($text, '/search') === 0) {
-            $query = trim(substr($text, 7));
-            if (empty($query)) {
-                sendTelegramMessage($chatId, "❌ Usage: /search [query]\nExample: /search latest news about Kenya", $TELEGRAM_BOT_TOKEN);
-            } else {
-                sendChatAction($chatId, 'typing', $TELEGRAM_BOT_TOKEN);
-                $msgId = sendTelegramMessage($chatId, "🔍 <b>Searching</b>●●●", $TELEGRAM_BOT_TOKEN);
-                
-                $results = webSearch($query);
-                $response = formatSearchResults($results, $query);
-                
-                if ($msgId && is_numeric($msgId)) {
-                    editTelegramMessage($chatId, $msgId, $response, $TELEGRAM_BOT_TOKEN);
-                } else {
-                    sendTelegramMessage($chatId, $response, $TELEGRAM_BOT_TOKEN);
-                }
-            }
-            http_response_code(200);
-            exit(json_encode(['status' => 'ok']));
-        }
-        
+        // Personality command
         if (strpos($text, '/personality') === 0) {
             $parts = explode(' ', trim($text));
-            $tone = isset($parts[1]) ? strtolower($parts[1]) : 'professional';
-            $validTones = ['casual', 'professional', 'humorous', 'technical', 'simple'];
-            
-            if (in_array($tone, $validTones)) {
-                setUserPersonality($userId, $tone, 'balanced');
-                sendTelegramMessage($chatId, formatRichResponse("Personality set to: $tone", 'memory'), $TELEGRAM_BOT_TOKEN);
+            if (count($parts) < 2) {
+                $options = getPersonalityOptions();
+                $msg = "🎭 <b>Available Personalities:</b>\n\n";
+                foreach ($options as $key => $opt) {
+                    $msg .= "• <b>$key</b> - {$opt['description']}\n";
+                }
+                $msg .= "\n<i>Usage: /personality [type]</i>";
+                sendTelegramMessage($chatId, $msg, $TELEGRAM_BOT_TOKEN);
             } else {
-                sendTelegramMessage($chatId, "❌ Invalid. Options: " . implode(', ', $validTones), $TELEGRAM_BOT_TOKEN);
+                $tone = strtolower($parts[1]);
+                $options = getPersonalityOptions();
+                if (isset($options[$tone])) {
+                    setUserPersonality($userId, $tone, 'balanced');
+                    sendTelegramMessage($chatId, formatRichResponse("Personality set to: <b>$tone</b>", 'memory'), $TELEGRAM_BOT_TOKEN);
+                } else {
+                    sendTelegramMessage($chatId, "❌ Invalid personality type. Use /personality to see options.", $TELEGRAM_BOT_TOKEN);
+                }
             }
-            
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
         }
         
-        // ============ ADMIN COMMANDS ============
+        // Admin commands
         if (isAdmin($userId)) {
-            // /admin command
             if ($text === '/admin') {
-                $stats = getSystemStats();
-                $adminMsg = "🔐 <b>Admin Panel</b>\n" . str_repeat("━", 28) . "\n\n";
-                $adminMsg .= "📊 <b>System Stats:</b>\n";
-                $adminMsg .= "👥 Users: {$stats['total_users']}\n";
-                $adminMsg .= "💬 Messages: {$stats['total_messages']}\n";
-                $adminMsg .= "🗣️ Conversations: {$stats['total_conversations']}\n";
-                $adminMsg .= "💾 Cache: {$stats['cache_size_kb']} KB\n";
-                $adminMsg .= "🖥️ Memory: {$stats['memory_usage_mb']} MB\n";
-                $adminMsg .= "⏰ Server: {$stats['server_time']}\n\n";
-                $adminMsg .= "<b>Commands:</b>\n";
-                $adminMsg .= "/users - List users\n";
-                $adminMsg .= "/block [id] - Block user\n";
-                $adminMsg .= "/unblock [id] - Unblock user\n";
-                $adminMsg .= "/broadcast [msg] - Message all\n";
-                $adminMsg .= "/clearuser [id] - Clear user data\n";
-                $adminMsg .= "/clearcache - Clear cache";
-                sendTelegramMessage($chatId, $adminMsg, $TELEGRAM_BOT_TOKEN);
+                $stats = getSystemAnalytics();
+                $status = getSystemStatus();
+                
+                $adminMsg = "🔐 <b>Admin Panel</b>\n" . str_repeat("─", 28) . "\n\n";
+                $adminMsg .= "📊 <b>System Status:</b> ";
+                $adminMsg .= $status['maintenance_mode'] ? "🔧 Maintenance" : "✅ Operational";
+                $adminMsg .= "\n\n<b>Statistics:</b>\n";
+                $adminMsg .= "👥 Total users: {$stats['total_users']}\n";
+                $adminMsg .= "💬 Total messages: {$stats['total_messages']}\n";
+                $adminMsg .= "📈 Active today: {$stats['active_users_today']}\n";
+                $adminMsg .= "📊 Active this week: {$stats['active_users_week']}\n";
+                $adminMsg .= "💾 Avg msgs/user: {$stats['avg_messages_per_user']}\n\n";
+                $adminMsg .= "<i>Use /help for admin commands</i>";
+                
+                sendTelegramMessage($chatId, formatRichResponse($adminMsg, 'admin'), $TELEGRAM_BOT_TOKEN);
                 http_response_code(200);
                 exit(json_encode(['status' => 'ok']));
             }
             
-            // /stats command
-            if ($text === '/stats') {
-                $stats = getSystemStats();
-                $msg = "📊 <b>System Statistics</b>\n" . str_repeat("━", 28) . "\n\n";
-                $msg .= "👥 Total Users: {$stats['total_users']}\n";
-                $msg .= "💬 Total Messages: {$stats['total_messages']}\n";
-                $msg .= "🗣️ Conversations: {$stats['total_conversations']}\n";
-                $msg .= "⚙️ Users with Prefs: {$stats['users_with_preferences']}\n";
-                $msg .= "💾 Cache Entries: {$stats['cache_entries']}\n";
-                $msg .= "📦 Cache Size: {$stats['cache_size_kb']} KB\n";
-                $msg .= "🖥️ Memory Usage: {$stats['memory_usage_mb']} MB\n";
-                $msg .= "🐘 PHP Version: {$stats['php_version']}\n";
-                $msg .= "⏰ Server Time: {$stats['server_time']}";
+            if (strpos($text, '/maintenance') === 0) {
+                $parts = explode(' ', trim($text), 2);
+                if (count($parts) < 2) {
+                    sendTelegramMessage($chatId, "Usage: /maintenance [on|off]", $TELEGRAM_BOT_TOKEN);
+                } else {
+                    $mode = strtolower($parts[1]);
+                    if ($mode === 'on') {
+                        setMaintenanceMode(true, 'System maintenance in progress');
+                        sendTelegramMessage($chatId, "🔧 Maintenance mode ENABLED", $TELEGRAM_BOT_TOKEN);
+                    } elseif ($mode === 'off') {
+                        setMaintenanceMode(false);
+                        sendTelegramMessage($chatId, "✅ Maintenance mode DISABLED", $TELEGRAM_BOT_TOKEN);
+                    }
+                }
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            if ($text === '/features') {
+                $flags = getFeatureFlags();
+                $msg = "🚩 <b>Feature Flags:</b>\n\n";
+                foreach ($flags as $feature => $enabled) {
+                    $status = $enabled ? "✅" : "❌";
+                    $msg .= "$status $feature\n";
+                }
+                $msg .= "\n<i>Toggle with /toggle [feature]</i>";
                 sendTelegramMessage($chatId, $msg, $TELEGRAM_BOT_TOKEN);
                 http_response_code(200);
                 exit(json_encode(['status' => 'ok']));
             }
             
-            // /users command
-            if ($text === '/users') {
-                $users = getAllUsers();
-                if (empty($users)) {
-                    sendTelegramMessage($chatId, "No users found.", $TELEGRAM_BOT_TOKEN);
-                } else {
-                    $msg = "👥 <b>Users List</b> (" . count($users) . ")\n" . str_repeat("━", 28) . "\n\n";
-                    foreach (array_slice($users, 0, 20) as $user) {
-                        $status = $user['blocked'] ? "🔴" : "🟢";
-                        $name = $user['name'] ?: 'Unknown';
-                        $msg .= "$status <code>{$user['user_id']}</code>\n";
-                        $msg .= "   👤 $name | 💬 {$user['messages']} msgs\n";
-                    }
-                    if (count($users) > 20) {
-                        $msg .= "\n... and " . (count($users) - 20) . " more users";
-                    }
-                    sendTelegramMessage($chatId, $msg, $TELEGRAM_BOT_TOKEN);
-                }
-                http_response_code(200);
-                exit(json_encode(['status' => 'ok']));
-            }
-            
-            // /block command
-            if (strpos($text, '/block') === 0 && $text !== '/block') {
-                $targetId = trim(substr($text, 6));
-                if (is_numeric($targetId)) {
-                    blockUser($targetId);
-                    sendTelegramMessage($chatId, "✅ User $targetId has been blocked.", $TELEGRAM_BOT_TOKEN);
-                } else {
-                    sendTelegramMessage($chatId, "❌ Usage: /block [user_id]", $TELEGRAM_BOT_TOKEN);
-                }
-                http_response_code(200);
-                exit(json_encode(['status' => 'ok']));
-            }
-            
-            // /unblock command
-            if (strpos($text, '/unblock') === 0) {
-                $targetId = trim(substr($text, 8));
-                if (is_numeric($targetId)) {
-                    unblockUser($targetId);
-                    sendTelegramMessage($chatId, "✅ User $targetId has been unblocked.", $TELEGRAM_BOT_TOKEN);
-                } else {
-                    sendTelegramMessage($chatId, "❌ Usage: /unblock [user_id]", $TELEGRAM_BOT_TOKEN);
-                }
-                http_response_code(200);
-                exit(json_encode(['status' => 'ok']));
-            }
-            
-            // /clearuser command
-            if (strpos($text, '/clearuser') === 0) {
-                $targetId = trim(substr($text, 10));
-                if (is_numeric($targetId)) {
-                    $deleted = clearUserData($targetId);
-                    sendTelegramMessage($chatId, "✅ Cleared $deleted files for user $targetId.", $TELEGRAM_BOT_TOKEN);
-                } else {
-                    sendTelegramMessage($chatId, "❌ Usage: /clearuser [user_id]", $TELEGRAM_BOT_TOKEN);
-                }
-                http_response_code(200);
-                exit(json_encode(['status' => 'ok']));
-            }
-            
-            // /clearcache command
-            if ($text === '/clearcache') {
-                $cacheFiles = glob(AI_CACHE_DIR . '/*.cache') ?: [];
-                $count = 0;
-                foreach ($cacheFiles as $file) {
-                    if (@unlink($file)) $count++;
-                }
-                sendTelegramMessage($chatId, "✅ Cleared $count cache entries.", $TELEGRAM_BOT_TOKEN);
-                http_response_code(200);
-                exit(json_encode(['status' => 'ok']));
-            }
-            
-            // /broadcast command
-            if (strpos($text, '/broadcast') === 0) {
-                $message = trim(substr($text, 10));
-                if (empty($message)) {
+            if (strpos($text, '/broadcast') === 0 && hasPermission($userId, 'can_broadcast')) {
+                $broadcastMsg = trim(substr($text, 10));
+                if (empty($broadcastMsg)) {
                     sendTelegramMessage($chatId, "❌ Usage: /broadcast [message]", $TELEGRAM_BOT_TOKEN);
                 } else {
-                    sendTelegramMessage($chatId, "📣 Broadcasting message...", $TELEGRAM_BOT_TOKEN);
-                    $result = broadcastMessage("📢 <b>Announcement</b>\n\n$message", $TELEGRAM_BOT_TOKEN);
+                    sendTelegramMessage($chatId, "📢 Broadcasting message...", $TELEGRAM_BOT_TOKEN);
+                    $result = broadcastMessage("📢 <b>Announcement</b>\n\n$broadcastMsg", $TELEGRAM_BOT_TOKEN);
                     sendTelegramMessage($chatId, "✅ Broadcast complete!\nSent: {$result['sent']}\nFailed: {$result['failed']}", $TELEGRAM_BOT_TOKEN);
                 }
                 http_response_code(200);
@@ -1762,25 +2407,14 @@ try {
         }
         
         // Handle images
-        if (isset($message['photo'])) {
+        if (isset($message['photo']) && isFeatureEnabled('image_analysis_enabled')) {
             sendChatAction($chatId, 'typing', $TELEGRAM_BOT_TOKEN);
-            
-            // Send analyzing animation
             $msgId = sendTelegramMessage($chatId, "📸 <b>Analyzing image</b>●", $TELEGRAM_BOT_TOKEN);
             
             $photo = end($message['photo']);
             $fileData = downloadFile($photo['file_id'], $TELEGRAM_BOT_TOKEN);
             
             if ($fileData) {
-                // Animate the dots
-                if ($msgId && is_numeric($msgId)) {
-                    $dots = ['●', '●●', '●●●'];
-                    foreach ($dots as $dot) {
-                        usleep(300000);
-                        editTelegramMessage($chatId, $msgId, "📸 <b>Analyzing image</b>" . $dot, $TELEGRAM_BOT_TOKEN);
-                    }
-                }
-                
                 $imagePrompt = $text ?: "Analyze this image in detail";
                 $imageBase64 = base64_encode($fileData);
                 
@@ -1799,20 +2433,9 @@ try {
                     }
                     saveConversationMessage($userId, 'user', '[IMAGE]: ' . $imagePrompt);
                     saveConversationMessage($userId, 'assistant', $response);
+                    logUserBehavior($userId, 'image_analysis', ['prompt_length' => strlen($imagePrompt)]);
                 } else {
-                    $errorMsg = "❌ Failed to analyze image. Please try again.";
-                    if ($msgId && is_numeric($msgId)) {
-                        editTelegramMessage($chatId, $msgId, $errorMsg, $TELEGRAM_BOT_TOKEN);
-                    } else {
-                        sendTelegramMessage($chatId, $errorMsg, $TELEGRAM_BOT_TOKEN);
-                    }
-                }
-            } else {
-                $errorMsg = "❌ Failed to download image. Please try again.";
-                if ($msgId && is_numeric($msgId)) {
-                    editTelegramMessage($chatId, $msgId, $errorMsg, $TELEGRAM_BOT_TOKEN);
-                } else {
-                    sendTelegramMessage($chatId, $errorMsg, $TELEGRAM_BOT_TOKEN);
+                    editTelegramMessage($chatId, $msgId, "❌ Failed to analyze image. Please try again.", $TELEGRAM_BOT_TOKEN);
                 }
             }
             
@@ -1820,84 +2443,22 @@ try {
             exit(json_encode(['status' => 'ok']));
         }
         
-        // Handle text messages
+        // Handle text messages - AI response
         if (!empty($text)) {
-            // Check if user is awaiting name input
-            $prefs = getUserPreferences($userId);
-            if (isset($prefs['awaiting_name']) && $prefs['awaiting_name'] === true) {
-                // Validate and save the name
-                $name = trim($text);
-                
-                // Basic validation
-                if (strlen($name) > 50) {
-                    sendTelegramMessage($chatId, "❌ Name is too long. Please keep it under 50 characters.", $TELEGRAM_BOT_TOKEN);
-                    http_response_code(200);
-                    exit(json_encode(['status' => 'ok']));
-                }
-                
-                if (empty($name)) {
-                    sendTelegramMessage($chatId, "❌ Please provide a valid name.", $TELEGRAM_BOT_TOKEN);
-                    http_response_code(200);
-                    exit(json_encode(['status' => 'ok']));
-                }
-                
-                // Save the name and ask for nationality
-                $prefs['name'] = $name;
-                $prefs['awaiting_name'] = false;
-                $prefs['awaiting_nationality'] = true;
-                saveUserPreferences($userId, $prefs);
-                
-                sendTelegramMessage($chatId, "✅ Nice to meet you, <b>$name</b>!\n\n🌍 <b>Step 2:</b> What's your nationality/country?\n\n💬 <i>Example: Kenya, USA, UK, India, etc.</i>", $TELEGRAM_BOT_TOKEN);
-                
+            // Content moderation
+            $moderation = moderateContent($text, $userId);
+            if (!$moderation['passed']) {
+                sendTelegramMessage($chatId, "⚠️ Your message was flagged by our content moderation system. Please rephrase.", $TELEGRAM_BOT_TOKEN);
                 http_response_code(200);
                 exit(json_encode(['status' => 'ok']));
             }
             
-            // Check if user is awaiting nationality input
-            if (isset($prefs['awaiting_nationality']) && $prefs['awaiting_nationality'] === true) {
-                $nationality = trim($text);
-                
-                if (strlen($nationality) > 50) {
-                    sendTelegramMessage($chatId, "❌ Please provide a shorter nationality name.", $TELEGRAM_BOT_TOKEN);
-                    http_response_code(200);
-                    exit(json_encode(['status' => 'ok']));
+            // Mood detection
+            if (isFeatureEnabled('mood_detection_enabled')) {
+                $moodData = detectMood($text);
+                if ($moodData['confidence'] > 50) {
+                    logMood($userId, $moodData['mood'], $moodData['confidence']);
                 }
-                
-                if (empty($nationality)) {
-                    sendTelegramMessage($chatId, "❌ Please provide a valid nationality.", $TELEGRAM_BOT_TOKEN);
-                    http_response_code(200);
-                    exit(json_encode(['status' => 'ok']));
-                }
-                
-                // Auto-detect country and get flag emoji
-                $countryEmoji = getCountryFlagEmoji($nationality);
-                
-                // Save nationality and country emoji
-                $prefs['nationality'] = ucfirst($nationality);
-                $prefs['country_emoji'] = $countryEmoji;
-                $prefs['awaiting_nationality'] = false;
-                saveUserPreferences($userId, $prefs);
-                
-                // Send complete welcome message
-                $welcomeMsg = "✅ <b>Profile Complete!</b>\n";
-                $welcomeMsg .= str_repeat("━", 28) . "\n\n";
-                $welcomeMsg .= "✅ <b>Name:</b> {$prefs['name']}\n";
-                $welcomeMsg .= "🌍 <b>Nationality:</b> $countryEmoji {$prefs['nationality']}\n";
-                $welcomeMsg .= "🆔 <b>Telegram ID:</b> <code>$userId</code>\n\n";
-                $welcomeMsg .= "<b>🎉 What I can do for you:</b>\n";
-                $welcomeMsg .= "🧠 Answer questions intelligently\n";
-                $welcomeMsg .= "📸 Analyze images\n";
-                $welcomeMsg .= "🌐 Translate languages\n";
-                $welcomeMsg .= "🔍 Search the web\n";
-                $welcomeMsg .= "💭 Remember our conversations\n";
-                $welcomeMsg .= "🎭 Adapt to your preferred style\n\n";
-                $welcomeMsg .= "💬 <i>Try asking me anything to get started!</i>\n\n";
-                $welcomeMsg .= "Use /help to see all commands or /myinfo to view your profile.";
-                
-                sendTelegramMessage($chatId, $welcomeMsg, $TELEGRAM_BOT_TOKEN);
-                
-                http_response_code(200);
-                exit(json_encode(['status' => 'ok']));
             }
             
             $cleanText = preg_replace('/@ai\s*/i', '', $text);
@@ -1909,82 +2470,33 @@ try {
                 exit(json_encode(['status' => 'ok']));
             }
             
-            // Check for natural language search requests
-            $searchQuery = parseSearchCommand($cleanText);
-            if ($searchQuery) {
-                sendChatAction($chatId, 'typing', $TELEGRAM_BOT_TOKEN);
-                $msgId = sendTelegramMessage($chatId, "🔍 <b>Searching</b>●●●", $TELEGRAM_BOT_TOKEN);
-                
-                $results = webSearch($searchQuery);
-                $response = formatSearchResults($results, $searchQuery);
-                
-                if ($msgId && is_numeric($msgId)) {
-                    editTelegramMessage($chatId, $msgId, $response, $TELEGRAM_BOT_TOKEN);
-                } else {
-                    sendTelegramMessage($chatId, $response, $TELEGRAM_BOT_TOKEN);
-                }
-                
-                http_response_code(200);
-                exit(json_encode(['status' => 'ok']));
-            }
-            
-            // Check for remember/memory commands in natural language
-            $rememberParsed = parseRememberCommand($cleanText);
-            if ($rememberParsed) {
-                if ($rememberParsed['type'] === 'name') {
-                    updateUserPreference($userId, 'name', $rememberParsed['value']);
-                    sendTelegramMessage($chatId, formatRichResponse("I'll remember your name is {$rememberParsed['value']}!", 'memory'), $TELEGRAM_BOT_TOKEN);
-                    http_response_code(200);
-                    exit(json_encode(['status' => 'ok']));
-                } elseif ($rememberParsed['type'] === 'language') {
-                    updateUserPreference($userId, 'preferred_language', ucfirst($rememberParsed['value']));
-                    sendTelegramMessage($chatId, formatRichResponse("I'll respond in {$rememberParsed['value']} from now on!", 'memory'), $TELEGRAM_BOT_TOKEN);
-                    http_response_code(200);
-                    exit(json_encode(['status' => 'ok']));
-                }
-            }
-            
             sendChatAction($chatId, 'typing', $TELEGRAM_BOT_TOKEN);
+            $msgId = sendTelegramMessage($chatId, "🧠 <b>Thinking</b>●", $TELEGRAM_BOT_TOKEN);
             
-            // Send animated analyzing message
-            $msgId = sendTelegramMessage($chatId, "🧠 <b>Analyzing</b>●", $TELEGRAM_BOT_TOKEN);
-            
-            if ($msgId && is_numeric($msgId)) {
-                $dots = ['●', '●●', '●●●'];
-                foreach ($dots as $dot) {
-                    usleep(300000);
-                    editTelegramMessage($chatId, $msgId, "🧠 <b>Analyzing</b>" . $dot, $TELEGRAM_BOT_TOKEN);
-                }
-            }
-            
-            // Get reply context for groups
+            // Build context
             $replyContext = getMessageHistory($message, $TELEGRAM_BOT_TOKEN);
-            
-            // BUILD FULL CONTEXT: Reply context + Conversation history + User preferences + Personality
             $conversationContext = formatConversationForContext($userId, 6);
             $userPrefsContext = formatPreferencesForContext($userId);
             $personality = getUserPersonality($userId);
             $personalityPrompt = getPersonalityPrompt($personality);
             
-            // Combine all context
             $fullContext = "";
-            if (!empty($replyContext)) {
-                $fullContext .= $replyContext;
-            }
-            if (!empty($userPrefsContext)) {
-                $fullContext .= "User information: $userPrefsContext\n\n";
-            }
-            if (!empty($conversationContext)) {
-                $fullContext .= $conversationContext;
-            }
+            if (!empty($replyContext)) $fullContext .= $replyContext;
+            if (!empty($userPrefsContext)) $fullContext .= "User info: $userPrefsContext\n\n";
+            if (!empty($conversationContext)) $fullContext .= $conversationContext;
             $fullContext .= "Personality: $personalityPrompt";
             
+            // Get AI response
             $response = getAIResponse($userId, $cleanText, $fullContext);
             
-            // Format response with rich styling
+            // Adjust by mood if detected
+            if (isset($moodData) && $moodData['confidence'] > 50) {
+                $response = adjustResponseByMood($response, $moodData['mood']);
+            }
+            
             $finalResponse = formatRichResponse($response, 'ai');
             
-            // Stream the response progressively for long responses
+            // Send response
             if ($msgId && is_numeric($msgId)) {
                 if (strlen($response) > 500) {
                     sendStreamingResponse($chatId, $finalResponse, $TELEGRAM_BOT_TOKEN, $msgId);
@@ -1995,11 +2507,18 @@ try {
                 sendTelegramMessage($chatId, $finalResponse, $TELEGRAM_BOT_TOKEN);
             }
             
-            // Save to conversation history
+            // Save conversation
             saveConversationMessage($userId, 'user', $cleanText);
             saveConversationMessage($userId, 'assistant', $response);
             
-            // Update last active
+            // Log behavior
+            logUserBehavior($userId, 'ai_query', [
+                'text_length' => strlen($cleanText),
+                'response_length' => strlen($response),
+                'mood' => $moodData['mood'] ?? 'neutral'
+            ]);
+            
+            // Update preferences
             $prefs = getUserPreferences($userId);
             saveUserPreferences($userId, $prefs);
         }
@@ -2008,201 +2527,12 @@ try {
         exit(json_encode(['status' => 'ok']));
     }
     
-    // Analytics API - requires ADMIN_TOKEN
-    if ($path === '/analytics.php' && $method === 'GET') {
-        $adminToken = getenv('ADMIN_TOKEN') ?: '';
-        $providedToken = $_GET['token'] ?? '';
-        if (empty($adminToken) || $providedToken !== $adminToken) {
-            http_response_code(403);
-            exit(json_encode(['error' => 'Unauthorized. Admin token required.']));
-        }
-        try {
-            $statsFiles = @glob(AI_STATS_DIR . '/daily_*.json');
-            if (!$statsFiles) $statsFiles = [];
-            
-            $totalMessages = 0;
-            $totalUsers = 0;
-            $activityByHour = array_fill(0, 24, 0);
-            $topUsers = [];
-            
-            foreach ($statsFiles as $file) {
-                $data = aiLoadJSON($file);
-                if (!is_array($data)) continue;
-                
-                foreach ($data as $userId => $stats) {
-                    if (!is_array($stats)) continue;
-                    $totalMessages += $stats['messages'] ?? 0;
-                    $totalUsers++;
-                    $topUsers[$userId] = [
-                        'messages' => $stats['messages'] ?? 0,
-                        'chars' => $stats['total_chars_sent'] ?? 0
-                    ];
-                }
-            }
-            
-            arsort($topUsers);
-            $topUsers = array_slice($topUsers, 0, 10, true);
-            
-            $conversationFiles = @glob(AI_CONVERSATIONS_DIR . '/*.json');
-            $conversationCount = $conversationFiles ? count($conversationFiles) : 0;
-            
-            http_response_code(200);
-            exit(json_encode([
-                'status' => 'success',
-                'data' => [
-                    'total_users' => $totalUsers,
-                    'total_messages' => $totalMessages,
-                    'total_conversations' => $conversationCount,
-                    'avg_response_length' => $totalMessages > 0 ? round($totalMessages / $totalUsers) : 0,
-                    'activity_by_hour' => $activityByHour,
-                    'top_users' => $topUsers
-                ]
-            ]));
-        } catch (Exception $e) {
-            aiLog("Analytics API Error: " . $e->getMessage());
-            http_response_code(500);
-            exit(json_encode(['status' => 'error', 'message' => 'Analytics error']));
-        }
-    }
-    
-    // Users API - requires ADMIN_TOKEN
-    if ($path === '/users_api.php' && $method === 'GET') {
-        $adminToken = getenv('ADMIN_TOKEN') ?: '';
-        $providedToken = $_GET['token'] ?? '';
-        if (empty($adminToken) || $providedToken !== $adminToken) {
-            http_response_code(403);
-            exit(json_encode(['error' => 'Unauthorized. Admin token required.']));
-        }
-        try {
-            $usersFiles = @glob(AI_USERS_DIR . '/*.json');
-            if (!$usersFiles) $usersFiles = [];
-            
-            $users = [];
-            
-            foreach ($usersFiles as $file) {
-                $userId = basename($file, '.json');
-                if ($userId === 'users_data') continue;
-                
-                $data = aiLoadJSON($file);
-                if (!is_array($data)) $data = [];
-                
-                $users[] = [
-                    'user_id' => $userId,
-                    'messages' => $data['messages'] ?? 0,
-                    'blocked' => $data['blocked'] ?? false,
-                    'personality' => $data['personality'] ?? 'professional',
-                    'last_active' => $data['last_active'] ?? 'N/A'
-                ];
-            }
-            
-            http_response_code(200);
-            exit(json_encode(['status' => 'success', 'users' => $users]));
-        } catch (Exception $e) {
-            aiLog("Users API Error: " . $e->getMessage());
-            http_response_code(500);
-            exit(json_encode(['status' => 'error', 'message' => 'Users API error']));
-        }
-    }
-    
-    // Conversations API - requires ADMIN_TOKEN
-    if ($path === '/conversations_api.php' && $method === 'GET') {
-        $adminToken = getenv('ADMIN_TOKEN') ?: '';
-        $providedToken = $_GET['token'] ?? '';
-        if (empty($adminToken) || $providedToken !== $adminToken) {
-            http_response_code(403);
-            exit(json_encode(['error' => 'Unauthorized. Admin token required.']));
-        }
-        try {
-            $files = @glob(AI_CONVERSATIONS_DIR . '/*.json');
-            if (!$files) $files = [];
-            
-            $conversations = [];
-            
-            foreach ($files as $file) {
-                $id = basename($file, '.json');
-                $data = aiLoadJSON($file);
-                if (!is_array($data)) $data = [];
-                
-                $lastMsg = !empty($data) ? end($data) : null;
-                
-                $conversations[] = [
-                    'user_id' => $id,
-                    'message_count' => count($data),
-                    'last_message' => $lastMsg && isset($lastMsg['timestamp']) ? $lastMsg['timestamp'] : 'N/A',
-                    'preview' => $lastMsg && isset($lastMsg['message']) ? substr($lastMsg['message'], 0, 50) : 'No messages'
-                ];
-            }
-            
-            http_response_code(200);
-            exit(json_encode(['status' => 'success', 'data' => $conversations]));
-        } catch (Exception $e) {
-            aiLog("Conversations API Error: " . $e->getMessage());
-            http_response_code(500);
-            exit(json_encode(['status' => 'error', 'message' => 'Conversations API error']));
-        }
-    }
-    
-    // System API - requires ADMIN_TOKEN
-    if ($path === '/system_api.php' && $method === 'GET') {
-        $adminToken = getenv('ADMIN_TOKEN') ?: '';
-        $providedToken = $_GET['token'] ?? '';
-        if (empty($adminToken) || $providedToken !== $adminToken) {
-            http_response_code(403);
-            exit(json_encode(['error' => 'Unauthorized. Admin token required.']));
-        }
-        try {
-            $action = $_GET['action'] ?? '';
-            
-            if ($action === 'performance') {
-                http_response_code(200);
-                exit(json_encode([
-                    'status' => 'success',
-                    'data' => [
-                        'uptime' => '24h',
-                        'response_time_avg' => '1.2s',
-                        'error_rate' => '0.1%',
-                        'memory_usage' => round(memory_get_usage() / 1024 / 1024, 2) . ' MB',
-                        'php_version' => PHP_VERSION,
-                        'server_time' => date('Y-m-d H:i:s')
-                    ]
-                ]));
-            }
-            
-            if ($action === 'list_backups') {
-                $backupDir = AI_DATA_DIR . '/backups';
-                @mkdir($backupDir, 0755, true);
-                
-                $backups = [];
-                $backupFiles = @glob($backupDir . '/*.zip');
-                if (!$backupFiles) $backupFiles = [];
-                
-                foreach ($backupFiles as $file) {
-                    $backups[] = [
-                        'name' => basename($file),
-                        'size' => round(@filesize($file) / 1024, 2) . ' KB',
-                        'date' => @filemtime($file)
-                    ];
-                }
-                
-                http_response_code(200);
-                exit(json_encode(['status' => 'success', 'backups' => $backups]));
-            }
-            
-            http_response_code(400);
-            exit(json_encode(['status' => 'error', 'message' => 'Invalid action']));
-        } catch (Exception $e) {
-            aiLog("System API Error: " . $e->getMessage());
-            http_response_code(500);
-            exit(json_encode(['status' => 'error', 'message' => 'System API error']));
-        }
-    }
-    
-    // Unknown endpoint
+    // 404 for unknown endpoints
     http_response_code(404);
     exit(json_encode(['error' => 'Not found']));
 
 } catch (Exception $e) {
-    aiLog("EXCEPTION: " . $e->getMessage());
+    aiLog("EXCEPTION: " . $e->getMessage(), 'ERROR');
     http_response_code(500);
     exit(json_encode(['error' => 'Server error']));
 }
