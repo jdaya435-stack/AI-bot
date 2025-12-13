@@ -1355,7 +1355,17 @@ function getRateLimits($tier) {
     return $limits[$tier] ?? $limits['free'];
 }
 
-function checkRateLimit($userId) {
+function checkRateLimit($userId, $isAIRequest = false) {
+    // Skip rate limit check if not an AI request (e.g., just browsing commands)
+    if (!$isAIRequest) {
+        return [
+            'allowed' => true,
+            'remaining_hourly' => 0,
+            'remaining_daily' => 0,
+            'skipped' => true
+        ];
+    }
+    
     $tier = getUserTier($userId);
     $limits = getRateLimits($tier);
     
@@ -1398,6 +1408,33 @@ function checkRateLimit($userId) {
         'allowed' => true,
         'remaining_hourly' => $limits['messages_per_hour'] - $data['hourly']['count'],
         'remaining_daily' => $limits['messages_per_day'] - $data['daily']['count']
+    ];
+}
+
+function getRateLimitStatus($userId) {
+    $tier = getUserTier($userId);
+    $limits = getRateLimits($tier);
+    
+    $rateLimitFile = AI_DATA_DIR . '/rate_limits_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $data = file_exists($rateLimitFile) ? aiLoadJSON($rateLimitFile) : [
+        'hourly' => ['count' => 0, 'reset' => time() + 3600],
+        'daily' => ['count' => 0, 'reset' => strtotime('tomorrow')]
+    ];
+    
+    $now = time();
+    
+    if ($now >= $data['hourly']['reset']) {
+        $data['hourly'] = ['count' => 0, 'reset' => $now + 3600];
+    }
+    if ($now >= $data['daily']['reset']) {
+        $data['daily'] = ['count' => 0, 'reset' => strtotime('tomorrow')];
+    }
+    
+    return [
+        'remaining_hourly' => max(0, $limits['messages_per_hour'] - $data['hourly']['count']),
+        'remaining_daily' => max(0, $limits['messages_per_day'] - $data['daily']['count']),
+        'hourly_limit' => $limits['messages_per_hour'],
+        'daily_limit' => $limits['messages_per_day']
     ];
 }
 
@@ -1917,16 +1954,49 @@ try {
         ]));
     }
     
-    // Check system status first
+    // Check system status first - Allow admins to bypass
     if (!isSystemOperational() && $path === '/webhook') {
-        $status = getSystemStatus();
-        if ($status['maintenance_mode']) {
-            http_response_code(503);
-            exit(json_encode(['status' => 'maintenance', 'message' => $status['message']]));
-        }
-        if ($status['emergency_mode']) {
-            http_response_code(503);
-            exit(json_encode(['status' => 'emergency', 'message' => $status['message']]));
+        $rawInput = file_get_contents('php://input');
+        $update = json_decode($rawInput, true);
+        
+        if (isset($update['message'])) {
+            $tempUserId = (int)($update['message']['from']['id'] ?? 0);
+            
+            // Allow admins to use bot during maintenance
+            if (!isAdmin($tempUserId)) {
+                $status = getSystemStatus();
+                $statusMessage = '';
+                
+                if ($status['maintenance_mode']) {
+                    $statusMessage = "🔧 <b>Maintenance Mode</b>\n\n";
+                    $statusMessage .= "The bot is currently under maintenance.\n\n";
+                    $statusMessage .= $status['message'] ? "ℹ️ <i>{$status['message']}</i>\n\n" : "";
+                    $statusMessage .= "Please try again later. Thank you for your patience! 🙏";
+                    
+                    $tempChatId = (int)($update['message']['chat']['id'] ?? 0);
+                    if ($tempChatId) {
+                        sendTelegramMessage($tempChatId, $statusMessage, $TELEGRAM_BOT_TOKEN);
+                    }
+                    
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'maintenance']));
+                }
+                
+                if ($status['emergency_mode']) {
+                    $statusMessage = "🚨 <b>Emergency Mode</b>\n\n";
+                    $statusMessage .= "The bot is temporarily unavailable due to an emergency.\n\n";
+                    $statusMessage .= $status['message'] ? "ℹ️ <i>{$status['message']}</i>\n\n" : "";
+                    $statusMessage .= "We're working to restore service as soon as possible.";
+                    
+                    $tempChatId = (int)($update['message']['chat']['id'] ?? 0);
+                    if ($tempChatId) {
+                        sendTelegramMessage($tempChatId, $statusMessage, $TELEGRAM_BOT_TOKEN);
+                    }
+                    
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'emergency']));
+                }
+            }
         }
     }
     
@@ -2044,15 +2114,9 @@ try {
             exit(json_encode(['status' => 'ok']));
         }
         
-        // Check rate limits
-        $rateLimit = checkRateLimit($userId);
-        if (!$rateLimit['allowed']) {
-            $resetTime = date('H:i', $rateLimit['reset']);
-            $reason = $rateLimit['reason'] === 'hourly_limit' ? 'hourly' : 'daily';
-            sendTelegramMessage($chatId, "⏱️ Rate limit reached! Your $reason limit has been exceeded. Resets at $resetTime.\n\nUpgrade your tier with /donate for higher limits!", $TELEGRAM_BOT_TOKEN);
-            http_response_code(200);
-            exit(json_encode(['status' => 'ok']));
-        }
+        // Check rate limits ONLY for non-command messages (will be checked again for AI requests)
+        // This is just an initial check for display purposes
+        $rateLimitStatus = getRateLimitStatus($userId);
         
         // Group chat handling
         $isGroup = isGroupChat($message);
@@ -2186,6 +2250,68 @@ try {
         
         // PROFILE COMPLETE - Handle all other commands
         
+        // Check if user is awaiting custom donation amount
+        if (isset($prefs['awaiting_donation_amount']) && $prefs['awaiting_donation_amount'] === true) {
+            if (is_numeric($text)) {
+                $amount = (int)$text;
+                
+                if ($amount < 50) {
+                    sendTelegramMessage($chatId, "❌ Minimum donation amount is 50 stars.", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                if ($amount > 2500) {
+                    sendTelegramMessage($chatId, "❌ Maximum donation amount is 2500 stars.", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                // Create invoice for custom amount
+                $invoiceUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/sendInvoice";
+                $invoiceData = [
+                    'chat_id' => $chatId,
+                    'title' => "Support AI Bot - Custom Amount",
+                    'description' => "Thank you for supporting the bot with $amount Telegram Stars!",
+                    'payload' => json_encode(['user_id' => $userId, 'amount' => $amount]),
+                    'currency' => 'XTR',
+                    'prices' => [
+                        ['label' => "Custom Donation ($amount Stars)", 'amount' => $amount]
+                    ]
+                ];
+                
+                $ch = curl_init();
+                curl_setopt_array($ch, [
+                    CURLOPT_URL => $invoiceUrl,
+                    CURLOPT_POST => 1,
+                    CURLOPT_POSTFIELDS => json_encode($invoiceData),
+                    CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT => 10
+                ]);
+                
+                $response = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+                
+                if ($httpCode !== 200) {
+                    sendTelegramMessage($chatId, "❌ Failed to create payment invoice. Please try again later.", $TELEGRAM_BOT_TOKEN);
+                    aiLog("Failed to create custom invoice: $response", 'ERROR');
+                }
+                
+                // Clear awaiting state
+                $prefs['awaiting_donation_amount'] = false;
+                saveUserPreferences($userId, $prefs);
+                
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            } else {
+                sendTelegramMessage($chatId, "❌ Please send a valid number of stars (50-2500).", $TELEGRAM_BOT_TOKEN);
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+        }
+        
         // /donate command - Ko-fi + Telegram Stars
         if ($text === '/donate') {
             if (!isFeatureEnabled('donations_enabled')) {
@@ -2214,12 +2340,109 @@ try {
                         ['text' => '⭐ 500 Stars (Premium)', 'callback_data' => 'donate_500']
                     ],
                     [
-                        ['text' => '⭐ Custom Amount', 'callback_data' => 'donate_custom']
+                        ['text' => '⭐ 1000 Stars (Premium+)', 'callback_data' => 'donate_1000']
                     ]
                 ]
             ];
             
             sendTelegramMessage($chatId, formatRichResponse($donateMsg, 'donation'), $TELEGRAM_BOT_TOKEN, json_encode($keyboard));
+            
+            http_response_code(200);
+            exit(json_encode(['status' => 'ok']));
+        }
+        
+        // Handle callback queries (for Telegram Stars donation buttons)
+        if (isset($update['callback_query'])) {
+            $callbackQuery = $update['callback_query'];
+            $callbackData = $callbackQuery['data'] ?? '';
+            $callbackChatId = $callbackQuery['message']['chat']['id'] ?? 0;
+            $callbackUserId = $callbackQuery['from']['id'] ?? 0;
+            $callbackMessageId = $callbackQuery['message']['message_id'] ?? 0;
+            
+            // Answer callback query to remove loading state
+            $answerUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/answerCallbackQuery";
+            $answerData = ['callback_query_id' => $callbackQuery['id']];
+            
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $answerUrl,
+                CURLOPT_POST => 1,
+                CURLOPT_POSTFIELDS => json_encode($answerData),
+                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 5
+            ]);
+            curl_exec($ch);
+            curl_close($ch);
+            
+            // Handle donation button clicks
+            if (strpos($callbackData, 'donate_') === 0) {
+                $amount = 0;
+                $tierName = '';
+                
+                if ($callbackData === 'donate_100') {
+                    $amount = 100;
+                    $tierName = 'Supporter';
+                } elseif ($callbackData === 'donate_500') {
+                    $amount = 500;
+                    $tierName = 'Premium';
+                } elseif ($callbackData === 'donate_1000') {
+                    $amount = 1000;
+                    $tierName = 'Premium+';
+                } elseif ($callbackData === 'donate_custom') {
+                    // For custom amounts, send instructions
+                    $customMsg = "⭐ <b>Custom Donation Amount</b>\n\n";
+                    $customMsg .= "To donate a custom amount of Telegram Stars:\n\n";
+                    $customMsg .= "1. Reply to this message with the number of stars\n";
+                    $customMsg .= "2. Example: 250\n\n";
+                    $customMsg .= "Minimum: 50 stars\n";
+                    $customMsg .= "Maximum: 2500 stars";
+                    
+                    sendTelegramMessage($callbackChatId, $customMsg, $TELEGRAM_BOT_TOKEN);
+                    
+                    // Mark user as awaiting custom amount
+                    $prefs = getUserPreferences($callbackUserId);
+                    $prefs['awaiting_donation_amount'] = true;
+                    saveUserPreferences($callbackUserId, $prefs);
+                    
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                if ($amount > 0) {
+                    // Create invoice for Telegram Stars payment
+                    $invoiceUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/sendInvoice";
+                    $invoiceData = [
+                        'chat_id' => $callbackChatId,
+                        'title' => "Support AI Bot - $tierName Tier",
+                        'description' => "Thank you for supporting the bot! This unlocks $tierName tier benefits with increased rate limits.",
+                        'payload' => json_encode(['user_id' => $callbackUserId, 'amount' => $amount]),
+                        'currency' => 'XTR', // Telegram Stars currency code
+                        'prices' => [
+                            ['label' => "$tierName Tier ($amount Stars)", 'amount' => $amount]
+                        ]
+                    ];
+                    
+                    $ch = curl_init();
+                    curl_setopt_array($ch, [
+                        CURLOPT_URL => $invoiceUrl,
+                        CURLOPT_POST => 1,
+                        CURLOPT_POSTFIELDS => json_encode($invoiceData),
+                        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_TIMEOUT => 10
+                    ]);
+                    
+                    $response = curl_exec($ch);
+                    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    curl_close($ch);
+                    
+                    if ($httpCode !== 200) {
+                        sendTelegramMessage($callbackChatId, "❌ Failed to create payment invoice. Please try again later.", $TELEGRAM_BOT_TOKEN);
+                        aiLog("Failed to create invoice: $response", 'ERROR');
+                    }
+                }
+            }
             
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
@@ -2243,7 +2466,7 @@ try {
             $helpMsg .= "/remember [info] - Save info\n";
             $helpMsg .= "/forget - Clear saved data\n\n";
             $helpMsg .= "<b>Your Tier:</b> " . ucfirst(getUserTier($userId)) . "\n";
-            $helpMsg .= "<b>Rate Limit:</b> {$rateLimit['remaining_hourly']} msgs left this hour";
+            $helpMsg .= "<b>Rate Limit:</b> {$rateLimitStatus['remaining_hourly']}/{$rateLimitStatus['hourly_limit']} msgs left this hour";
             
             if (isAdmin($userId)) {
                 $helpMsg .= "\n\n<b>🔐 Admin Commands:</b>\n";
@@ -2408,6 +2631,16 @@ try {
         
         // Handle images
         if (isset($message['photo']) && isFeatureEnabled('image_analysis_enabled')) {
+            // Check rate limit for AI image analysis
+            $rateLimit = checkRateLimit($userId, true);
+            if (!$rateLimit['allowed']) {
+                $resetTime = date('H:i', $rateLimit['reset']);
+                $reason = $rateLimit['reason'] === 'hourly_limit' ? 'hourly' : 'daily';
+                sendTelegramMessage($chatId, "⏱️ <b>Rate Limit Reached!</b>\n\nYour $reason limit has been exceeded.\n\n🕐 Resets at: <b>$resetTime</b>\n\n💡 <i>Tip: Use /donate to upgrade your tier for higher limits!</i>", $TELEGRAM_BOT_TOKEN);
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
             sendChatAction($chatId, 'typing', $TELEGRAM_BOT_TOKEN);
             $msgId = sendTelegramMessage($chatId, "📸 <b>Analyzing image</b>●", $TELEGRAM_BOT_TOKEN);
             
@@ -2449,6 +2682,16 @@ try {
             $moderation = moderateContent($text, $userId);
             if (!$moderation['passed']) {
                 sendTelegramMessage($chatId, "⚠️ Your message was flagged by our content moderation system. Please rephrase.", $TELEGRAM_BOT_TOKEN);
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            // NOW check rate limit for actual AI request
+            $rateLimit = checkRateLimit($userId, true);
+            if (!$rateLimit['allowed']) {
+                $resetTime = date('H:i', $rateLimit['reset']);
+                $reason = $rateLimit['reason'] === 'hourly_limit' ? 'hourly' : 'daily';
+                sendTelegramMessage($chatId, "⏱️ <b>Rate Limit Reached!</b>\n\nYour $reason limit has been exceeded.\n\n🕐 Resets at: <b>$resetTime</b>\n\n💡 <i>Tip: Use /donate to upgrade your tier for higher limits!</i>", $TELEGRAM_BOT_TOKEN);
                 http_response_code(200);
                 exit(json_encode(['status' => 'ok']));
             }
