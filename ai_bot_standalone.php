@@ -1356,6 +1356,16 @@ function getRateLimits($tier) {
 }
 
 function checkRateLimit($userId, $isAIRequest = false) {
+    // Admins have unlimited requests
+    if (isAdmin($userId)) {
+        return [
+            'allowed' => true,
+            'remaining_hourly' => 999999,
+            'remaining_daily' => 999999,
+            'is_admin' => true
+        ];
+    }
+    
     // Skip rate limit check if not an AI request (e.g., just browsing commands)
     if (!$isAIRequest) {
         return [
@@ -1412,6 +1422,16 @@ function checkRateLimit($userId, $isAIRequest = false) {
 }
 
 function getRateLimitStatus($userId) {
+    // Admins have unlimited
+    if (isAdmin($userId)) {
+        return [
+            'remaining_hourly' => 999999,
+            'remaining_daily' => 999999,
+            'hourly_limit' => 999999,
+            'daily_limit' => 999999
+        ];
+    }
+    
     $tier = getUserTier($userId);
     $limits = getRateLimits($tier);
     
@@ -1436,6 +1456,29 @@ function getRateLimitStatus($userId) {
         'hourly_limit' => $limits['messages_per_hour'],
         'daily_limit' => $limits['messages_per_day']
     ];
+}
+
+function addUserRequests($userId, $hourlyAmount, $dailyAmount) {
+    $rateLimitFile = AI_DATA_DIR . '/rate_limits_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $data = file_exists($rateLimitFile) ? aiLoadJSON($rateLimitFile) : [
+        'hourly' => ['count' => 0, 'reset' => time() + 3600],
+        'daily' => ['count' => 0, 'reset' => strtotime('tomorrow')]
+    ];
+    
+    // Subtract from count (negative addition = more requests available)
+    $data['hourly']['count'] = max(0, $data['hourly']['count'] - $hourlyAmount);
+    $data['daily']['count'] = max(0, $data['daily']['count'] - $dailyAmount);
+    
+    return aiSaveJSON($rateLimitFile, $data);
+}
+
+function resetUserRateLimit($userId) {
+    $rateLimitFile = AI_DATA_DIR . '/rate_limits_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $userId) . '.json';
+    $data = [
+        'hourly' => ['count' => 0, 'reset' => time() + 3600],
+        'daily' => ['count' => 0, 'reset' => strtotime('tomorrow')]
+    ];
+    return aiSaveJSON($rateLimitFile, $data);
 }
 
 // ============================================================================
@@ -1640,37 +1683,75 @@ function getResponseLengthGuidance($complexity) {
 function askGemini($prompt, $context = '', $imageBase64 = null, $imageMimeType = null) {
     global $GEMINI_API_KEY, $GOOGLE_IMAGEN_API_KEY, $HUGGINGFACE_API_KEY;
     
-    if (empty($prompt)) return "I didn't receive a message. Please try again.";
-    
-    // Check cache first
-    if (empty($imageBase64)) {
-        $cached = getCachedResponse($prompt);
-        if ($cached) return $cached;
+    if (empty($prompt)) {
+        aiLog("askGemini: Empty prompt received", 'WARNING');
+        return "I didn't receive a message. Please try again.";
     }
     
-    if (!empty($GEMINI_API_KEY)) {
-        $response = tryGeminiAPI($prompt, $context, $imageBase64, $imageMimeType, $GEMINI_API_KEY);
-        if ($response) {
-            if (empty($imageBase64)) setCachedResponse($prompt, $response);
-            return $response;
+    aiLog("askGemini: Processing prompt - Length: " . strlen($prompt), 'INFO');
+    
+    // Check cache first (only for non-image requests)
+    if (empty($imageBase64)) {
+        $cached = getCachedResponse($prompt);
+        if ($cached) {
+            aiLog("askGemini: Returning cached response", 'INFO');
+            return $cached;
         }
     }
     
+    // Try primary Gemini API
+    if (!empty($GEMINI_API_KEY)) {
+        aiLog("askGemini: Trying primary GEMINI_API_KEY", 'INFO');
+        $response = tryGeminiAPI($prompt, $context, $imageBase64, $imageMimeType, $GEMINI_API_KEY);
+        if ($response) {
+            if (empty($imageBase64)) setCachedResponse($prompt, $response);
+            aiLog("askGemini: Success with primary key", 'INFO');
+            return $response;
+        } else {
+            aiLog("askGemini: Primary key failed", 'WARNING');
+        }
+    } else {
+        aiLog("askGemini: No GEMINI_API_KEY set", 'WARNING');
+    }
+    
+    // Try fallback Gemini API (Imagen key)
     if (!empty($GOOGLE_IMAGEN_API_KEY)) {
+        aiLog("askGemini: Trying fallback GOOGLE_IMAGEN_API_KEY", 'INFO');
         $response = tryGeminiAPI($prompt, $context, $imageBase64, $imageMimeType, $GOOGLE_IMAGEN_API_KEY);
-        if ($response) return $response;
+        if ($response) {
+            aiLog("askGemini: Success with fallback key", 'INFO');
+            return $response;
+        } else {
+            aiLog("askGemini: Fallback key failed", 'WARNING');
+        }
+    } else {
+        aiLog("askGemini: No GOOGLE_IMAGEN_API_KEY set", 'WARNING');
     }
     
+    // Try Hugging Face as last resort
     if (!empty($HUGGINGFACE_API_KEY)) {
+        aiLog("askGemini: Trying Hugging Face API", 'INFO');
         $response = tryHuggingFaceAPI($prompt, $context, $HUGGINGFACE_API_KEY);
-        if ($response) return $response;
+        if ($response) {
+            aiLog("askGemini: Success with Hugging Face", 'INFO');
+            return $response;
+        } else {
+            aiLog("askGemini: Hugging Face failed", 'WARNING');
+        }
+    } else {
+        aiLog("askGemini: No HUGGINGFACE_API_KEY set", 'WARNING');
     }
     
+    // All APIs failed
+    aiLog("askGemini: ALL APIs FAILED - Returning fallback", 'ERROR');
     return getSmartFallbackResponse($prompt);
 }
 
 function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeType = null, $apiKey = null) {
-    if (empty($apiKey)) return null;
+    if (empty($apiKey)) {
+        aiLog("Gemini API: No API key provided", 'WARNING');
+        return null;
+    }
     
     $complexity = analyzeQuestionComplexity($prompt, $context);
     $lengthGuidance = getResponseLengthGuidance($complexity);
@@ -1678,10 +1759,12 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
     $fullPrompt = $context ? "$context\n\nUser: $prompt" : $prompt;
     $fullPrompt .= "\n\n[SYSTEM INSTRUCTION] $lengthGuidance";
     
-    $models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+    $models = ['gemini-2.0-flash-exp', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
     
     foreach ($models as $model) {
-        $url = "https://generativelanguage.googleapis.com/v1/models/{$model}:generateContent?key={$apiKey}";
+        aiLog("Trying Gemini model: $model", 'INFO');
+        
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
         
         $parts = [];
         if ($imageBase64 && $imageMimeType) {
@@ -1689,7 +1772,19 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
         }
         $parts[] = ['text' => $fullPrompt];
         
-        $data = ['contents' => [['parts' => $parts]]];
+        $data = [
+            'contents' => [
+                [
+                    'parts' => $parts
+                ]
+            ],
+            'generationConfig' => [
+                'temperature' => 0.7,
+                'topK' => 40,
+                'topP' => 0.95,
+                'maxOutputTokens' => 2048
+            ]
+        ];
         
         $ch = curl_init();
         curl_setopt_array($ch, [
@@ -1698,24 +1793,43 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
             CURLOPT_POSTFIELDS => json_encode($data),
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 20,
+            CURLOPT_TIMEOUT => 30,
             CURLOPT_SSL_VERIFYPEER => true
         ]);
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
         
-        if ($httpCode === 429) return null;
+        if ($curlError) {
+            aiLog("Gemini API curl error for $model: $curlError", 'ERROR');
+            continue;
+        }
+        
+        aiLog("Gemini API response for $model - HTTP Code: $httpCode", 'INFO');
+        
+        if ($httpCode === 429) {
+            aiLog("Rate limit hit for $model, trying next model", 'WARNING');
+            continue;
+        }
         
         if ($httpCode === 200 && $response) {
             $result = json_decode($response, true);
+            
             if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
-                return $result['candidates'][0]['content']['parts'][0]['text'];
+                $responseText = $result['candidates'][0]['content']['parts'][0]['text'];
+                aiLog("Gemini API success with $model - Response length: " . strlen($responseText), 'INFO');
+                return $responseText;
+            } else {
+                aiLog("Gemini API response structure error for $model: " . json_encode($result), 'ERROR');
             }
+        } else {
+            aiLog("Gemini API failed for $model - Response: " . substr($response, 0, 500), 'ERROR');
         }
     }
     
+    aiLog("All Gemini models failed", 'ERROR');
     return null;
 }
 
@@ -1777,25 +1891,42 @@ function getSmartFallbackResponse($question) {
         return "😊 You're welcome! Happy to help.";
     }
     
-    return "🤖 I'm here to help! I can answer questions, provide information, and assist with various topics. What would you like to know?";
+    // CRITICAL: Only return fallback if APIs are completely unavailable
+    return "⚠️ I'm currently unable to connect to my AI services. Please try again in a moment. If this persists, contact the bot administrator.";
 }
 
 function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze this image in detail") {
-    global $GEMINI_API_KEY;
+    global $GEMINI_API_KEY, $GOOGLE_IMAGEN_API_KEY;
     
-    if (empty($GEMINI_API_KEY)) return null;
+    if (empty($GEMINI_API_KEY) && empty($GOOGLE_IMAGEN_API_KEY)) {
+        aiLog("analyzeImageWithGemini: No API keys available", 'ERROR');
+        return null;
+    }
     
-    $models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+    $apiKey = !empty($GEMINI_API_KEY) ? $GEMINI_API_KEY : $GOOGLE_IMAGEN_API_KEY;
+    $models = ['gemini-2.0-flash-exp', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
     
     foreach ($models as $model) {
-        $url = "https://generativelanguage.googleapis.com/v1/models/{$model}:generateContent?key={$GEMINI_API_KEY}";
+        aiLog("analyzeImageWithGemini: Trying model $model", 'INFO');
+        
+        $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
         
         $parts = [
             ['inline_data' => ['mime_type' => $imageMimeType, 'data' => $imageBase64]],
             ['text' => $prompt]
         ];
         
-        $data = ['contents' => [['parts' => $parts]]];
+        $data = [
+            'contents' => [
+                [
+                    'parts' => $parts
+                ]
+            ],
+            'generationConfig' => [
+                'temperature' => 0.7,
+                'maxOutputTokens' => 2048
+            ]
+        ];
         
         $ch = curl_init();
         curl_setopt_array($ch, [
@@ -1812,14 +1943,20 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         
+        aiLog("analyzeImageWithGemini: Model $model returned HTTP $httpCode", 'INFO');
+        
         if ($httpCode === 200) {
             $result = json_decode($response, true);
             if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
+                aiLog("analyzeImageWithGemini: Success with $model", 'INFO');
                 return $result['candidates'][0]['content']['parts'][0]['text'];
+            } else {
+                aiLog("analyzeImageWithGemini: Invalid response structure from $model", 'ERROR');
             }
         }
     }
     
+    aiLog("analyzeImageWithGemini: All models failed", 'ERROR');
     return null;
 }
 
@@ -2010,6 +2147,112 @@ try {
             exit(json_encode(['status' => 'ok']));
         }
         
+        // Handle callback queries FIRST (for inline buttons like donation buttons)
+        if (isset($update['callback_query'])) {
+            $callbackQuery = $update['callback_query'];
+            $callbackData = $callbackQuery['data'] ?? '';
+            $callbackChatId = $callbackQuery['message']['chat']['id'] ?? 0;
+            $callbackUserId = $callbackQuery['from']['id'] ?? 0;
+            $callbackMessageId = $callbackQuery['message']['message_id'] ?? 0;
+            
+            aiLog("Callback query received: $callbackData from user $callbackUserId", 'INFO');
+            
+            // Answer callback query immediately to remove loading state
+            $answerUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/answerCallbackQuery";
+            $answerData = [
+                'callback_query_id' => $callbackQuery['id'],
+                'text' => '⏳ Processing your request...'
+            ];
+            
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $answerUrl,
+                CURLOPT_POST => 1,
+                CURLOPT_POSTFIELDS => json_encode($answerData),
+                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 5
+            ]);
+            curl_exec($ch);
+            curl_close($ch);
+            
+            // Handle donation button clicks
+            if (strpos($callbackData, 'donate_') === 0) {
+                $amount = 0;
+                $tierName = '';
+                
+                if ($callbackData === 'donate_100') {
+                    $amount = 100;
+                    $tierName = 'Supporter';
+                } elseif ($callbackData === 'donate_500') {
+                    $amount = 500;
+                    $tierName = 'Premium';
+                } elseif ($callbackData === 'donate_1000') {
+                    $amount = 1000;
+                    $tierName = 'Premium+';
+                } elseif ($callbackData === 'donate_custom') {
+                    // For custom amounts, send instructions
+                    $customMsg = "⭐ <b>Custom Donation Amount</b>\n\n";
+                    $customMsg .= "To donate a custom amount of Telegram Stars:\n\n";
+                    $customMsg .= "1. Reply to this message with the number of stars\n";
+                    $customMsg .= "2. Example: 250\n\n";
+                    $customMsg .= "Minimum: 50 stars\n";
+                    $customMsg .= "Maximum: 2500 stars";
+                    
+                    sendTelegramMessage($callbackChatId, $customMsg, $TELEGRAM_BOT_TOKEN);
+                    
+                    // Mark user as awaiting custom amount
+                    $prefs = getUserPreferences($callbackUserId);
+                    $prefs['awaiting_donation_amount'] = true;
+                    saveUserPreferences($callbackUserId, $prefs);
+                    
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                if ($amount > 0) {
+                    aiLog("Creating invoice for $amount stars for user $callbackUserId", 'INFO');
+                    
+                    // Create invoice for Telegram Stars payment
+                    $invoiceUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/sendInvoice";
+                    $invoiceData = [
+                        'chat_id' => $callbackChatId,
+                        'title' => "Support AI Bot - $tierName Tier",
+                        'description' => "Thank you for supporting the bot! This unlocks $tierName tier benefits with increased rate limits.",
+                        'payload' => json_encode(['user_id' => $callbackUserId, 'amount' => $amount, 'tier' => $tierName]),
+                        'currency' => 'XTR', // Telegram Stars currency code
+                        'prices' => [
+                            ['label' => "$tierName Tier", 'amount' => $amount]
+                        ]
+                    ];
+                    
+                    $ch = curl_init();
+                    curl_setopt_array($ch, [
+                        CURLOPT_URL => $invoiceUrl,
+                        CURLOPT_POST => 1,
+                        CURLOPT_POSTFIELDS => json_encode($invoiceData),
+                        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_TIMEOUT => 10
+                    ]);
+                    
+                    $response = curl_exec($ch);
+                    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    curl_close($ch);
+                    
+                    if ($httpCode === 200) {
+                        aiLog("Invoice created successfully for user $callbackUserId", 'INFO');
+                    } else {
+                        aiLog("Failed to create invoice: HTTP $httpCode - $response", 'ERROR');
+                        sendTelegramMessage($callbackChatId, "❌ Failed to create payment invoice. Please try again later or contact support.", $TELEGRAM_BOT_TOKEN);
+                    }
+                }
+            }
+            
+            http_response_code(200);
+            exit(json_encode(['status' => 'ok']));
+        }
+        
         // Handle new chat members (bot added to group)
         if (isset($update['message']['new_chat_members'])) {
             $botInfo = getBotInfo($TELEGRAM_BOT_TOKEN);
@@ -2027,13 +2270,17 @@ try {
         // Handle Telegram Stars payment (pre-checkout query)
         if (isset($update['pre_checkout_query'])) {
             $preCheckout = $update['pre_checkout_query'];
+            $preCheckoutId = $preCheckout['id'];
             $userId = $preCheckout['from']['id'];
             $stars = $preCheckout['total_amount'];
+            $payload = json_decode($preCheckout['invoice_payload'], true);
             
-            // Answer pre-checkout query
+            aiLog("Pre-checkout query received: $stars stars from user $userId", 'INFO');
+            
+            // Always approve the pre-checkout query (payment goes to bot owner automatically)
             $answerUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/answerPreCheckoutQuery";
             $answerData = [
-                'pre_checkout_query_id' => $preCheckout['id'],
+                'pre_checkout_query_id' => $preCheckoutId,
                 'ok' => true
             ];
             
@@ -2046,8 +2293,16 @@ try {
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT => 5
             ]);
-            curl_exec($ch);
+            
+            $response = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
+            
+            if ($httpCode === 200) {
+                aiLog("Pre-checkout approved for user $userId", 'INFO');
+            } else {
+                aiLog("Failed to approve pre-checkout: HTTP $httpCode", 'ERROR');
+            }
             
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
@@ -2059,28 +2314,51 @@ try {
             $userId = $update['message']['from']['id'];
             $chatId = $update['message']['chat']['id'];
             $stars = $payment['total_amount'];
+            $payload = json_decode($payment['invoice_payload'], true);
+            
+            aiLog("Successful payment: $stars stars from user $userId", 'INFO');
             
             // Record donation
             recordDonation($userId, 0, 'stars', $stars);
             
             // Upgrade user tier based on stars
+            $tier = 'free';
+            $tierName = 'Free';
+            
             if ($stars >= 1000) {
                 setUserTier($userId, 'premium');
-                $tier = 'Premium';
+                $tier = 'premium';
+                $tierName = 'Premium';
             } elseif ($stars >= 500) {
+                setUserTier($userId, 'premium');
+                $tier = 'premium';
+                $tierName = 'Premium';
+            } elseif ($stars >= 100) {
                 setUserTier($userId, 'supporter');
-                $tier = 'Supporter';
+                $tier = 'supporter';
+                $tierName = 'Supporter';
             }
+            
+            // Get tier benefits
+            $limits = getRateLimits($tier);
             
             $thankYouMsg = "🌟 <b>Thank You for Your Support!</b>\n\n";
             $thankYouMsg .= "✨ You donated <b>$stars Telegram Stars</b>!\n\n";
-            if (isset($tier)) {
-                $thankYouMsg .= "🎉 You've been upgraded to <b>$tier</b> tier!\n\n";
+            
+            if ($tier !== 'free') {
+                $thankYouMsg .= "🎉 You've been upgraded to <b>$tierName</b> tier!\n\n";
+                $thankYouMsg .= "<b>Your New Benefits:</b>\n";
+                $thankYouMsg .= "⚡ {$limits['messages_per_hour']} messages per hour\n";
+                $thankYouMsg .= "📊 {$limits['messages_per_day']} messages per day\n\n";
             }
+            
             $thankYouMsg .= "Your support helps keep this bot running and improving. 💙\n\n";
-            $thankYouMsg .= "Use /myinfo to see your new benefits!";
+            $thankYouMsg .= "Use /myinfo to see your profile and benefits!";
             
             sendTelegramMessage($chatId, formatRichResponse($thankYouMsg, 'donation'), $TELEGRAM_BOT_TOKEN);
+            
+            // Log the donation
+            logUserBehavior($userId, 'donation', ['stars' => $stars, 'tier' => $tier]);
             
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
@@ -2351,103 +2629,6 @@ try {
             exit(json_encode(['status' => 'ok']));
         }
         
-        // Handle callback queries (for Telegram Stars donation buttons)
-        if (isset($update['callback_query'])) {
-            $callbackQuery = $update['callback_query'];
-            $callbackData = $callbackQuery['data'] ?? '';
-            $callbackChatId = $callbackQuery['message']['chat']['id'] ?? 0;
-            $callbackUserId = $callbackQuery['from']['id'] ?? 0;
-            $callbackMessageId = $callbackQuery['message']['message_id'] ?? 0;
-            
-            // Answer callback query to remove loading state
-            $answerUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/answerCallbackQuery";
-            $answerData = ['callback_query_id' => $callbackQuery['id']];
-            
-            $ch = curl_init();
-            curl_setopt_array($ch, [
-                CURLOPT_URL => $answerUrl,
-                CURLOPT_POST => 1,
-                CURLOPT_POSTFIELDS => json_encode($answerData),
-                CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 5
-            ]);
-            curl_exec($ch);
-            curl_close($ch);
-            
-            // Handle donation button clicks
-            if (strpos($callbackData, 'donate_') === 0) {
-                $amount = 0;
-                $tierName = '';
-                
-                if ($callbackData === 'donate_100') {
-                    $amount = 100;
-                    $tierName = 'Supporter';
-                } elseif ($callbackData === 'donate_500') {
-                    $amount = 500;
-                    $tierName = 'Premium';
-                } elseif ($callbackData === 'donate_1000') {
-                    $amount = 1000;
-                    $tierName = 'Premium+';
-                } elseif ($callbackData === 'donate_custom') {
-                    // For custom amounts, send instructions
-                    $customMsg = "⭐ <b>Custom Donation Amount</b>\n\n";
-                    $customMsg .= "To donate a custom amount of Telegram Stars:\n\n";
-                    $customMsg .= "1. Reply to this message with the number of stars\n";
-                    $customMsg .= "2. Example: 250\n\n";
-                    $customMsg .= "Minimum: 50 stars\n";
-                    $customMsg .= "Maximum: 2500 stars";
-                    
-                    sendTelegramMessage($callbackChatId, $customMsg, $TELEGRAM_BOT_TOKEN);
-                    
-                    // Mark user as awaiting custom amount
-                    $prefs = getUserPreferences($callbackUserId);
-                    $prefs['awaiting_donation_amount'] = true;
-                    saveUserPreferences($callbackUserId, $prefs);
-                    
-                    http_response_code(200);
-                    exit(json_encode(['status' => 'ok']));
-                }
-                
-                if ($amount > 0) {
-                    // Create invoice for Telegram Stars payment
-                    $invoiceUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/sendInvoice";
-                    $invoiceData = [
-                        'chat_id' => $callbackChatId,
-                        'title' => "Support AI Bot - $tierName Tier",
-                        'description' => "Thank you for supporting the bot! This unlocks $tierName tier benefits with increased rate limits.",
-                        'payload' => json_encode(['user_id' => $callbackUserId, 'amount' => $amount]),
-                        'currency' => 'XTR', // Telegram Stars currency code
-                        'prices' => [
-                            ['label' => "$tierName Tier ($amount Stars)", 'amount' => $amount]
-                        ]
-                    ];
-                    
-                    $ch = curl_init();
-                    curl_setopt_array($ch, [
-                        CURLOPT_URL => $invoiceUrl,
-                        CURLOPT_POST => 1,
-                        CURLOPT_POSTFIELDS => json_encode($invoiceData),
-                        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-                        CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_TIMEOUT => 10
-                    ]);
-                    
-                    $response = curl_exec($ch);
-                    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                    curl_close($ch);
-                    
-                    if ($httpCode !== 200) {
-                        sendTelegramMessage($callbackChatId, "❌ Failed to create payment invoice. Please try again later.", $TELEGRAM_BOT_TOKEN);
-                        aiLog("Failed to create invoice: $response", 'ERROR');
-                    }
-                }
-            }
-            
-            http_response_code(200);
-            exit(json_encode(['status' => 'ok']));
-        }
-        
         // Handle other commands
         if ($text === '/help') {
             $helpMsg = "ℹ️ <b>Commands:</b>\n\n";
@@ -2473,9 +2654,13 @@ try {
                 $helpMsg .= "/admin - Admin panel\n";
                 $helpMsg .= "/stats - System stats\n";
                 $helpMsg .= "/users - List users\n";
+                $helpMsg .= "/apitest - Test API connectivity\n";
                 $helpMsg .= "/maintenance [on/off] - Toggle maintenance\n";
                 $helpMsg .= "/broadcast [msg] - Message all users\n";
-                $helpMsg .= "/features - Manage feature flags";
+                $helpMsg .= "/features - Manage feature flags\n";
+                $helpMsg .= "/addrequest [id] [amount] - Add requests to user\n";
+                $helpMsg .= "/resetlimit [id] - Reset user's rate limit\n\n";
+                $helpMsg .= "<i>💡 Admins have unlimited AI requests!</i>";
             }
             
             sendTelegramMessage($chatId, $helpMsg, $TELEGRAM_BOT_TOKEN);
@@ -2611,6 +2796,117 @@ try {
                 }
                 $msg .= "\n<i>Toggle with /toggle [feature]</i>";
                 sendTelegramMessage($chatId, $msg, $TELEGRAM_BOT_TOKEN);
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            if ($text === '/apitest') {
+                global $GEMINI_API_KEY, $GOOGLE_IMAGEN_API_KEY, $HUGGINGFACE_API_KEY;
+                
+                $msg = "🔍 <b>API Diagnostics</b>\n" . str_repeat("─", 28) . "\n\n";
+                
+                // Check API keys
+                $msg .= "<b>API Keys Status:</b>\n";
+                $msg .= "GEMINI_API_KEY: " . (!empty($GEMINI_API_KEY) ? "✅ Set (" . substr($GEMINI_API_KEY, 0, 10) . "...)" : "❌ Not set") . "\n";
+                $msg .= "GOOGLE_IMAGEN_API_KEY: " . (!empty($GOOGLE_IMAGEN_API_KEY) ? "✅ Set" : "❌ Not set") . "\n";
+                $msg .= "HUGGINGFACE_API_KEY: " . (!empty($HUGGINGFACE_API_KEY) ? "✅ Set" : "❌ Not set") . "\n\n";
+                
+                // Test Gemini API
+                if (!empty($GEMINI_API_KEY)) {
+                    $msg .= "<b>Testing Gemini API...</b>\n";
+                    $testResponse = tryGeminiAPI("Say 'API Working' if you receive this", "", null, null, $GEMINI_API_KEY);
+                    if ($testResponse) {
+                        $msg .= "✅ Gemini API: <b>Working</b>\n";
+                        $msg .= "Response: " . substr($testResponse, 0, 50) . "...\n\n";
+                    } else {
+                        $msg .= "❌ Gemini API: <b>Failed</b>\n\n";
+                    }
+                }
+                
+                // Check recent logs
+                $logFile = AI_MONITORING_DIR . '/logs_' . date('Y-m-d') . '.json';
+                if (file_exists($logFile)) {
+                    $logs = aiLoadJSON($logFile);
+                    $errorCount = 0;
+                    $recentErrors = [];
+                    foreach (array_slice($logs, -20) as $log) {
+                        if ($log['level'] === 'ERROR') {
+                            $errorCount++;
+                            $recentErrors[] = $log['message'];
+                        }
+                    }
+                    $msg .= "<b>Recent Errors:</b> $errorCount in last 20 logs\n";
+                    if (!empty($recentErrors)) {
+                        $msg .= "Last error: " . substr($recentErrors[0], 0, 100) . "\n";
+                    }
+                }
+                
+                sendTelegramMessage($chatId, formatRichResponse($msg, 'admin'), $TELEGRAM_BOT_TOKEN);
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            // Add requests to user
+            if (strpos($text, '/addrequest') === 0) {
+                $parts = preg_split('/\s+/', trim($text));
+                
+                if (count($parts) < 3) {
+                    sendTelegramMessage($chatId, "❌ Usage: /addrequest [user_id] [amount]\n\nExample: /addrequest 123456789 50\n\nThis will add 50 requests to both hourly and daily limits.", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                $targetUserId = $parts[1];
+                $amount = (int)$parts[2];
+                
+                if (!is_numeric($targetUserId) || $amount <= 0) {
+                    sendTelegramMessage($chatId, "❌ Invalid user ID or amount. User ID must be numeric and amount must be positive.", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                if (addUserRequests($targetUserId, $amount, $amount)) {
+                    $userName = getUserPreferences($targetUserId)['name'] ?? 'Unknown';
+                    sendTelegramMessage($chatId, "✅ Added <b>$amount</b> requests to user:\n\n👤 User: $userName\n🆔 ID: $targetUserId\n\nThey now have $amount extra requests in both hourly and daily limits!", $TELEGRAM_BOT_TOKEN);
+                    
+                    // Notify the user
+                    sendTelegramMessage($targetUserId, "🎁 <b>Bonus Requests!</b>\n\nYou've been granted <b>$amount</b> extra AI requests!\n\nUse /myinfo to check your current limits.", $TELEGRAM_BOT_TOKEN);
+                } else {
+                    sendTelegramMessage($chatId, "❌ Failed to add requests. Please try again.", $TELEGRAM_BOT_TOKEN);
+                }
+                
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            // Reset user rate limit
+            if (strpos($text, '/resetlimit') === 0) {
+                $parts = preg_split('/\s+/', trim($text));
+                
+                if (count($parts) < 2) {
+                    sendTelegramMessage($chatId, "❌ Usage: /resetlimit [user_id]\n\nExample: /resetlimit 123456789", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                $targetUserId = $parts[1];
+                
+                if (!is_numeric($targetUserId)) {
+                    sendTelegramMessage($chatId, "❌ Invalid user ID. Must be numeric.", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                if (resetUserRateLimit($targetUserId)) {
+                    $userName = getUserPreferences($targetUserId)['name'] ?? 'Unknown';
+                    sendTelegramMessage($chatId, "✅ Reset rate limit for:\n\n👤 User: $userName\n🆔 ID: $targetUserId\n\nTheir request counters have been reset to 0!", $TELEGRAM_BOT_TOKEN);
+                    
+                    // Notify the user
+                    sendTelegramMessage($targetUserId, "🔄 <b>Rate Limit Reset!</b>\n\nYour request counters have been reset. You now have full access to your tier limits again!", $TELEGRAM_BOT_TOKEN);
+                } else {
+                    sendTelegramMessage($chatId, "❌ Failed to reset rate limit. Please try again.", $TELEGRAM_BOT_TOKEN);
+                }
+                
                 http_response_code(200);
                 exit(json_encode(['status' => 'ok']));
             }
