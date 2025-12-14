@@ -2155,13 +2155,14 @@ try {
             $callbackUserId = $callbackQuery['from']['id'] ?? 0;
             $callbackMessageId = $callbackQuery['message']['message_id'] ?? 0;
             
-            aiLog("Callback query received: $callbackData from user $callbackUserId", 'INFO');
+            aiLog("Callback query received: Data='$callbackData', User=$callbackUserId, Chat=$callbackChatId", 'INFO');
             
-            // Answer callback query immediately to remove loading state
+            // Answer callback query IMMEDIATELY to remove loading state
             $answerUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/answerCallbackQuery";
             $answerData = [
                 'callback_query_id' => $callbackQuery['id'],
-                'text' => '⏳ Processing your request...'
+                'text' => '⏳ Processing...',
+                'show_alert' => false
             ];
             
             $ch = curl_init();
@@ -2173,15 +2174,25 @@ try {
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_TIMEOUT => 5
             ]);
-            curl_exec($ch);
+            $answerResponse = curl_exec($ch);
+            $answerHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
+            
+            aiLog("Callback query answered: HTTP $answerHttpCode", 'INFO');
             
             // Handle donation button clicks
             if (strpos($callbackData, 'donate_') === 0) {
+                aiLog("Processing donation button: $callbackData", 'INFO');
+                
                 $amount = 0;
                 $tierName = '';
                 
-                if ($callbackData === 'donate_100') {
+                // Handle test payment
+                if ($callbackData === 'donate_test_1') {
+                    $amount = 1;
+                    $tierName = 'Test';
+                    aiLog("Test payment initiated", 'INFO');
+                } elseif ($callbackData === 'donate_100') {
                     $amount = 100;
                     $tierName = 'Supporter';
                 } elseif ($callbackData === 'donate_500') {
@@ -2191,13 +2202,16 @@ try {
                     $amount = 1000;
                     $tierName = 'Premium+';
                 } elseif ($callbackData === 'donate_custom') {
+                    aiLog("Custom donation selected", 'INFO');
+                    
                     // For custom amounts, send instructions
                     $customMsg = "⭐ <b>Custom Donation Amount</b>\n\n";
                     $customMsg .= "To donate a custom amount of Telegram Stars:\n\n";
                     $customMsg .= "1. Reply to this message with the number of stars\n";
-                    $customMsg .= "2. Example: 250\n\n";
-                    $customMsg .= "Minimum: 50 stars\n";
-                    $customMsg .= "Maximum: 2500 stars";
+                    $customMsg .= "2. Example: <code>250</code>\n\n";
+                    $customMsg .= "📊 Minimum: 50 stars\n";
+                    $customMsg .= "📊 Maximum: 2500 stars\n\n";
+                    $customMsg .= "💡 <i>Just type a number between 50-2500</i>";
                     
                     sendTelegramMessage($callbackChatId, $customMsg, $TELEGRAM_BOT_TOKEN);
                     
@@ -2206,25 +2220,43 @@ try {
                     $prefs['awaiting_donation_amount'] = true;
                     saveUserPreferences($callbackUserId, $prefs);
                     
+                    aiLog("Custom donation setup complete for user $callbackUserId", 'INFO');
+                    
                     http_response_code(200);
                     exit(json_encode(['status' => 'ok']));
                 }
                 
                 if ($amount > 0) {
-                    aiLog("Creating invoice for $amount stars for user $callbackUserId", 'INFO');
+                    aiLog("Creating invoice: Amount=$amount, Tier=$tierName, User=$callbackUserId", 'INFO');
+                    
+                    // Send "Creating invoice..." message
+                    sendTelegramMessage($callbackChatId, "💫 Creating payment invoice for <b>$amount Stars</b>...", $TELEGRAM_BOT_TOKEN);
                     
                     // Create invoice for Telegram Stars payment
                     $invoiceUrl = "https://api.telegram.org/bot{$TELEGRAM_BOT_TOKEN}/sendInvoice";
+                    
+                    $payload = json_encode([
+                        'user_id' => $callbackUserId,
+                        'amount' => $amount,
+                        'tier' => $tierName,
+                        'timestamp' => time()
+                    ]);
+                    
                     $invoiceData = [
                         'chat_id' => $callbackChatId,
                         'title' => "Support AI Bot - $tierName Tier",
-                        'description' => "Thank you for supporting the bot! This unlocks $tierName tier benefits with increased rate limits.",
-                        'payload' => json_encode(['user_id' => $callbackUserId, 'amount' => $amount, 'tier' => $tierName]),
-                        'currency' => 'XTR', // Telegram Stars currency code
+                        'description' => "Thank you for supporting the bot! You'll get $tierName tier with {$amount} messages per hour.",
+                        'payload' => $payload,
+                        'currency' => 'XTR',
                         'prices' => [
-                            ['label' => "$tierName Tier", 'amount' => $amount]
+                            [
+                                'label' => "$tierName Tier",
+                                'amount' => $amount
+                            ]
                         ]
                     ];
+                    
+                    aiLog("Invoice data prepared: " . json_encode($invoiceData), 'INFO');
                     
                     $ch = curl_init();
                     curl_setopt_array($ch, [
@@ -2233,20 +2265,48 @@ try {
                         CURLOPT_POSTFIELDS => json_encode($invoiceData),
                         CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
                         CURLOPT_RETURNTRANSFER => true,
-                        CURLOPT_TIMEOUT => 10
+                        CURLOPT_TIMEOUT => 15,
+                        CURLOPT_SSL_VERIFYPEER => true
                     ]);
                     
-                    $response = curl_exec($ch);
-                    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    $invoiceResponse = curl_exec($ch);
+                    $invoiceHttpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    $curlError = curl_error($ch);
                     curl_close($ch);
                     
-                    if ($httpCode === 200) {
-                        aiLog("Invoice created successfully for user $callbackUserId", 'INFO');
+                    aiLog("Invoice API response: HTTP $invoiceHttpCode", 'INFO');
+                    
+                    if ($curlError) {
+                        aiLog("Invoice creation CURL error: $curlError", 'ERROR');
+                        sendTelegramMessage($callbackChatId, "❌ <b>Network Error</b>\n\nFailed to connect to payment system. Please try again.\n\nError: $curlError", $TELEGRAM_BOT_TOKEN);
+                    } elseif ($invoiceHttpCode === 200) {
+                        $result = json_decode($invoiceResponse, true);
+                        if (isset($result['ok']) && $result['ok'] === true) {
+                            aiLog("Invoice created successfully for user $callbackUserId - $amount stars", 'INFO');
+                            
+                            // Send success notification to owner
+                            sendNotificationToOwner("💰 Invoice created: $amount stars for user $callbackUserId ($tierName tier)", 'normal');
+                        } else {
+                            aiLog("Invoice creation failed: " . json_encode($result), 'ERROR');
+                            $errorMsg = $result['description'] ?? 'Unknown error';
+                            sendTelegramMessage($callbackChatId, "❌ <b>Invoice Creation Failed</b>\n\n$errorMsg\n\n💡 Please contact the bot administrator.", $TELEGRAM_BOT_TOKEN);
+                        }
                     } else {
-                        aiLog("Failed to create invoice: HTTP $httpCode - $response", 'ERROR');
-                        sendTelegramMessage($callbackChatId, "❌ Failed to create payment invoice. Please try again later or contact support.", $TELEGRAM_BOT_TOKEN);
+                        aiLog("Invoice creation failed: HTTP $invoiceHttpCode - Response: $invoiceResponse", 'ERROR');
+                        
+                        $errorDetails = json_decode($invoiceResponse, true);
+                        $errorMsg = $errorDetails['description'] ?? 'Unknown error';
+                        
+                        sendTelegramMessage($callbackChatId, "❌ <b>Payment System Error</b>\n\nHTTP Code: $invoiceHttpCode\nError: $errorMsg\n\n💡 This might be a bot configuration issue. Please contact the administrator.", $TELEGRAM_BOT_TOKEN);
+                        
+                        // Send detailed error to owner
+                        sendNotificationToOwner("🚨 Invoice creation failed!\n\nUser: $callbackUserId\nAmount: $amount stars\nHTTP: $invoiceHttpCode\nError: $errorMsg\n\nFull response: " . substr($invoiceResponse, 0, 300), 'critical');
                     }
+                } else {
+                    aiLog("Invalid amount: $amount", 'ERROR');
                 }
+            } else {
+                aiLog("Unknown callback data: $callbackData", 'WARNING');
             }
             
             http_response_code(200);
@@ -2801,7 +2861,7 @@ try {
             }
             
             if ($text === '/apitest') {
-                global $GEMINI_API_KEY, $GOOGLE_IMAGEN_API_KEY, $HUGGINGFACE_API_KEY;
+                global $GEMINI_API_KEY, $GOOGLE_IMAGEN_API_KEY, $HUGGINGFACE_API_KEY, $TELEGRAM_BOT_TOKEN;
                 
                 $msg = "🔍 <b>API Diagnostics</b>\n" . str_repeat("─", 28) . "\n\n";
                 
@@ -2809,7 +2869,33 @@ try {
                 $msg .= "<b>API Keys Status:</b>\n";
                 $msg .= "GEMINI_API_KEY: " . (!empty($GEMINI_API_KEY) ? "✅ Set (" . substr($GEMINI_API_KEY, 0, 10) . "...)" : "❌ Not set") . "\n";
                 $msg .= "GOOGLE_IMAGEN_API_KEY: " . (!empty($GOOGLE_IMAGEN_API_KEY) ? "✅ Set" : "❌ Not set") . "\n";
-                $msg .= "HUGGINGFACE_API_KEY: " . (!empty($HUGGINGFACE_API_KEY) ? "✅ Set" : "❌ Not set") . "\n\n";
+                $msg .= "HUGGINGFACE_API_KEY: " . (!empty($HUGGINGFACE_API_KEY) ? "✅ Set" : "❌ Not set") . "\n";
+                $msg .= "TELEGRAM_BOT_TOKEN: " . (!empty($TELEGRAM_BOT_TOKEN) ? "✅ Set (" . substr($TELEGRAM_BOT_TOKEN, 0, 10) . "...)" : "❌ Not set") . "\n\n";
+                
+                // Check bot info and payment provider
+                $botInfo = getBotInfo($TELEGRAM_BOT_TOKEN);
+                if ($botInfo) {
+                    $msg .= "<b>Bot Information:</b>\n";
+                    $msg .= "Bot ID: {$botInfo['id']}\n";
+                    $msg .= "Username: @{$botInfo['username']}\n";
+                    $msg .= "Name: {$botInfo['first_name']}\n";
+                    $msg .= "Can Join Groups: " . ($botInfo['can_join_groups'] ? "✅" : "❌") . "\n";
+                    $msg .= "Supports Inline: " . ($botInfo['supports_inline_queries'] ? "✅" : "❌") . "\n\n";
+                    
+                    // Check if bot can receive payments
+                    $msg .= "<b>Payment Status:</b>\n";
+                    $msg .= "⭐ Telegram Stars: Checking...\n\n";
+                    
+                    // Try to check payment support by attempting to get bot commands
+                    $msg .= "💡 <i>To enable Telegram Stars payments:</i>\n";
+                    $msg .= "1. Talk to @BotFather\n";
+                    $msg .= "2. Select your bot\n";
+                    $msg .= "3. Go to Bot Settings → Payments\n";
+                    $msg .= "4. Select 'Telegram Stars'\n";
+                    $msg .= "5. Payments go directly to your Telegram account\n\n";
+                } else {
+                    $msg .= "❌ Failed to get bot info\n\n";
+                }
                 
                 // Test Gemini API
                 if (!empty($GEMINI_API_KEY)) {
@@ -2842,6 +2928,26 @@ try {
                 }
                 
                 sendTelegramMessage($chatId, formatRichResponse($msg, 'admin'), $TELEGRAM_BOT_TOKEN);
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            // Test payment system
+            if ($text === '/testpayment') {
+                $msg = "💳 <b>Payment System Test</b>\n" . str_repeat("─", 28) . "\n\n";
+                $msg .= "This will send you a test donation button to verify the payment system is working.\n\n";
+                $msg .= "Click the button below to test:";
+                
+                $keyboard = [
+                    'inline_keyboard' => [
+                        [
+                            ['text' => '⭐ Test 1 Star Payment', 'callback_data' => 'donate_test_1']
+                        ]
+                    ]
+                ];
+                
+                sendTelegramMessage($chatId, $msg, $TELEGRAM_BOT_TOKEN, json_encode($keyboard));
+                
                 http_response_code(200);
                 exit(json_encode(['status' => 'ok']));
             }
