@@ -994,7 +994,8 @@ function translateText($text, $targetLanguage, $apiKey) {
     
     $prompt = "Translate the following text to $targetLanguage. Only provide the translation, no explanations or additional text:\n\n$text";
     
-    $url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={$apiKey}";
+    // Use correct model name
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={$apiKey}";
     $data = ['contents' => [['parts' => [['text' => $prompt]]]]];
     
     $ch = curl_init();
@@ -1026,7 +1027,8 @@ function detectLanguage($text, $apiKey) {
     
     $prompt = "Detect the language of this text and respond with ONLY the language name in English (e.g., 'Spanish', 'French', 'Arabic'). Text: $text";
     
-    $url = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={$apiKey}";
+    // Use correct model name
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={$apiKey}";
     $data = ['contents' => [['parts' => [['text' => $prompt]]]]];
     
     $ch = curl_init();
@@ -1759,11 +1761,21 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
     $fullPrompt = $context ? "$context\n\nUser: $prompt" : $prompt;
     $fullPrompt .= "\n\n[SYSTEM INSTRUCTION] $lengthGuidance";
     
-    $models = ['gemini-2.0-flash-exp', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+    // CORRECTED: Use Gemini 2.5 Flash models as requested
+    // gemini-2.0-flash-exp is the API name for Gemini 2.5 Flash
+    if ($imageBase64 && $imageMimeType) {
+        // Vision models for image analysis
+        $models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash'];
+    } else {
+        // Text models - Gemini 2.5 Flash and 2.5 Flash Lite
+        // API names: gemini-2.0-flash-exp (2.5 Flash), gemini-1.5-flash-8b (Flash Lite)
+        $models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash-8b', 'gemini-1.5-flash'];
+    }
     
     foreach ($models as $model) {
         aiLog("Trying Gemini model: $model", 'INFO');
         
+        // Use v1beta endpoint for latest models
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
         
         $parts = [];
@@ -1782,7 +1794,25 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
                 'temperature' => 0.7,
                 'topK' => 40,
                 'topP' => 0.95,
-                'maxOutputTokens' => 2048
+                'maxOutputTokens' => 8192
+            ],
+            'safetySettings' => [
+                [
+                    'category' => 'HARM_CATEGORY_HARASSMENT',
+                    'threshold' => 'BLOCK_NONE'
+                ],
+                [
+                    'category' => 'HARM_CATEGORY_HATE_SPEECH',
+                    'threshold' => 'BLOCK_NONE'
+                ],
+                [
+                    'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                    'threshold' => 'BLOCK_NONE'
+                ],
+                [
+                    'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                    'threshold' => 'BLOCK_NONE'
+                ]
             ]
         ];
         
@@ -1814,8 +1844,26 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
             continue;
         }
         
+        if ($httpCode === 404) {
+            aiLog("Model $model not found - may need different API key", 'ERROR');
+            continue;
+        }
+        
+        if ($httpCode === 400) {
+            $errorData = json_decode($response, true);
+            $errorMsg = $errorData['error']['message'] ?? 'Unknown error';
+            aiLog("Gemini API bad request for $model: $errorMsg", 'ERROR');
+            continue;
+        }
+        
         if ($httpCode === 200 && $response) {
             $result = json_decode($response, true);
+            
+            // Check if response was blocked
+            if (isset($result['candidates'][0]['finishReason']) && $result['candidates'][0]['finishReason'] === 'SAFETY') {
+                aiLog("Response blocked by safety filters for $model", 'WARNING');
+                continue;
+            }
             
             if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
                 $responseText = $result['candidates'][0]['content']['parts'][0]['text'];
@@ -1904,7 +1952,9 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
     }
     
     $apiKey = !empty($GEMINI_API_KEY) ? $GEMINI_API_KEY : $GOOGLE_IMAGEN_API_KEY;
-    $models = ['gemini-2.0-flash-exp', 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+    
+    // Use Gemini 2.5 Flash (exp) for images
+    $models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash'];
     
     foreach ($models as $model) {
         aiLog("analyzeImageWithGemini: Trying model $model", 'INFO');
@@ -1924,7 +1974,25 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
             ],
             'generationConfig' => [
                 'temperature' => 0.7,
-                'maxOutputTokens' => 2048
+                'maxOutputTokens' => 8192
+            ],
+            'safetySettings' => [
+                [
+                    'category' => 'HARM_CATEGORY_HARASSMENT',
+                    'threshold' => 'BLOCK_NONE'
+                ],
+                [
+                    'category' => 'HARM_CATEGORY_HATE_SPEECH',
+                    'threshold' => 'BLOCK_NONE'
+                ],
+                [
+                    'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+                    'threshold' => 'BLOCK_NONE'
+                ],
+                [
+                    'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
+                    'threshold' => 'BLOCK_NONE'
+                ]
             ]
         ];
         
@@ -1953,6 +2021,10 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
             } else {
                 aiLog("analyzeImageWithGemini: Invalid response structure from $model", 'ERROR');
             }
+        } elseif ($httpCode === 404) {
+            aiLog("analyzeImageWithGemini: Model $model not found", 'ERROR');
+        } else {
+            aiLog("analyzeImageWithGemini: HTTP $httpCode - " . substr($response, 0, 200), 'ERROR');
         }
     }
     
@@ -3012,6 +3084,100 @@ try {
                 } else {
                     sendTelegramMessage($chatId, "❌ Failed to reset rate limit. Please try again.", $TELEGRAM_BOT_TOKEN);
                 }
+                
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            // Deploy latest commit command
+            if ($text === '/deploylatestcommit') {
+                if (!isBotOwner($userId)) {
+                    sendTelegramMessage($chatId, "❌ This command is only available to the bot owner.", $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                sendTelegramMessage($chatId, "🚀 <b>Deploying Latest Commit...</b>\n\nThis may take a moment...", $TELEGRAM_BOT_TOKEN);
+                
+                $deployLog = [];
+                $deployLog[] = date('Y-m-d H:i:s') . " - Deploy initiated by user $userId";
+                
+                // Check if we're in a Git repository
+                $gitCheck = shell_exec('git rev-parse --is-inside-work-tree 2>&1');
+                if (trim($gitCheck) !== 'true') {
+                    $deployLog[] = "ERROR: Not a Git repository";
+                    $msg = "❌ <b>Deploy Failed</b>\n\nThis directory is not a Git repository.\n\nTo enable auto-deploy:\n1. Initialize git: <code>git init</code>\n2. Add remote: <code>git remote add origin [url]</code>\n3. Try again";
+                    sendTelegramMessage($chatId, $msg, $TELEGRAM_BOT_TOKEN);
+                    aiLog("Deploy failed: Not a Git repository", 'ERROR');
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                // Get current commit
+                $currentCommit = trim(shell_exec('git rev-parse --short HEAD 2>&1'));
+                $deployLog[] = "Current commit: $currentCommit";
+                
+                // Fetch latest changes
+                $deployLog[] = "Fetching latest changes...";
+                $fetchOutput = shell_exec('git fetch origin 2>&1');
+                $deployLog[] = "Fetch output: $fetchOutput";
+                
+                // Check for changes
+                $behindCount = trim(shell_exec('git rev-list HEAD..origin/$(git rev-parse --abbrev-ref HEAD) --count 2>&1'));
+                if ($behindCount === '0') {
+                    $msg = "✅ <b>Already Up to Date</b>\n\nCurrent commit: <code>$currentCommit</code>\n\nNo new changes to deploy.";
+                    sendTelegramMessage($chatId, $msg, $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+                
+                $deployLog[] = "Behind by $behindCount commits";
+                
+                // Pull latest changes
+                $deployLog[] = "Pulling latest changes...";
+                $pullOutput = shell_exec('git pull origin $(git rev-parse --abbrev-ref HEAD) 2>&1');
+                $deployLog[] = "Pull output: $pullOutput";
+                
+                // Check if pull was successful
+                if (strpos($pullOutput, 'Already up to date') !== false) {
+                    $newCommit = $currentCommit;
+                    $status = "Already up to date";
+                } elseif (strpos($pullOutput, 'error') !== false || strpos($pullOutput, 'fatal') !== false) {
+                    $deployLog[] = "ERROR: Pull failed - $pullOutput";
+                    $msg = "❌ <b>Deploy Failed</b>\n\n<code>$pullOutput</code>\n\nPlease check the repository manually.";
+                    sendTelegramMessage($chatId, $msg, $TELEGRAM_BOT_TOKEN);
+                    aiLog("Deploy failed: " . $pullOutput, 'ERROR');
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                } else {
+                    $newCommit = trim(shell_exec('git rev-parse --short HEAD 2>&1'));
+                    $deployLog[] = "New commit: $newCommit";
+                    $status = "Successfully updated";
+                    
+                    // Get commit message
+                    $commitMsg = trim(shell_exec("git log -1 --pretty=%B 2>&1"));
+                    $deployLog[] = "Commit message: $commitMsg";
+                }
+                
+                // Save deploy log
+                $logFile = AI_ADMIN_DIR . '/deploy_log.txt';
+                file_put_contents($logFile, implode("\n", $deployLog) . "\n\n", FILE_APPEND);
+                
+                // Send success message
+                $msg = "✅ <b>Deploy Successful!</b>\n\n";
+                $msg .= "<b>From:</b> <code>$currentCommit</code>\n";
+                $msg .= "<b>To:</b> <code>$newCommit</code>\n";
+                $msg .= "<b>Commits:</b> $behindCount\n\n";
+                if (isset($commitMsg)) {
+                    $msg .= "<b>Latest commit:</b>\n<i>" . htmlspecialchars(substr($commitMsg, 0, 100)) . "</i>\n\n";
+                }
+                $msg .= "ℹ️ Changes will take effect on next request.";
+                
+                sendTelegramMessage($chatId, $msg, $TELEGRAM_BOT_TOKEN);
+                
+                // Notify in log
+                aiLog("Deploy successful: $currentCommit -> $newCommit", 'INFO');
+                sendNotificationToOwner("🚀 Bot updated to commit $newCommit\n\nDeployed by user $userId", 'normal');
                 
                 http_response_code(200);
                 exit(json_encode(['status' => 'ok']));
