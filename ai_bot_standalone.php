@@ -994,8 +994,8 @@ function translateText($text, $targetLanguage, $apiKey) {
     
     $prompt = "Translate the following text to $targetLanguage. Only provide the translation, no explanations or additional text:\n\n$text";
     
-    // Use correct model name
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={$apiKey}";
+    // Use working Gemini 2.5 model
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={$apiKey}";
     $data = ['contents' => [['parts' => [['text' => $prompt]]]]];
     
     $ch = curl_init();
@@ -1761,21 +1761,19 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
     $fullPrompt = $context ? "$context\n\nUser: $prompt" : $prompt;
     $fullPrompt .= "\n\n[SYSTEM INSTRUCTION] $lengthGuidance";
     
-    // CORRECTED: Use Gemini 2.5 Flash models as requested
-    // gemini-2.0-flash-exp is the API name for Gemini 2.5 Flash
+    // USE ONLY THE MODELS FROM YOUR GOOGLE AI STUDIO
     if ($imageBase64 && $imageMimeType) {
-        // Vision models for image analysis
-        $models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash'];
+        // For images: use multimodal models
+        $models = ['gemini-2.5-flash-tts', 'gemini-2.5-flash'];
     } else {
-        // Text models - Gemini 2.5 Flash and 2.5 Flash Lite
-        // API names: gemini-2.0-flash-exp (2.5 Flash), gemini-1.5-flash-8b (Flash Lite)
-        $models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash-8b', 'gemini-1.5-flash'];
+        // For text: use the first 3 working models from your dashboard
+        $models = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-tts'];
     }
     
     foreach ($models as $model) {
         aiLog("Trying Gemini model: $model", 'INFO');
         
-        // Use v1beta endpoint for latest models
+        // Use v1beta endpoint
         $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
         
         $parts = [];
@@ -1791,7 +1789,7 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
                 ]
             ],
             'generationConfig' => [
-                'temperature' => 0.7,
+                'temperature' => 0.9,
                 'topK' => 40,
                 'topP' => 0.95,
                 'maxOutputTokens' => 8192
@@ -1799,19 +1797,19 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
             'safetySettings' => [
                 [
                     'category' => 'HARM_CATEGORY_HARASSMENT',
-                    'threshold' => 'BLOCK_NONE'
+                    'threshold' => 'BLOCK_ONLY_HIGH'
                 ],
                 [
                     'category' => 'HARM_CATEGORY_HATE_SPEECH',
-                    'threshold' => 'BLOCK_NONE'
+                    'threshold' => 'BLOCK_ONLY_HIGH'
                 ],
                 [
                     'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                    'threshold' => 'BLOCK_NONE'
+                    'threshold' => 'BLOCK_ONLY_HIGH'
                 ],
                 [
                     'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
-                    'threshold' => 'BLOCK_NONE'
+                    'threshold' => 'BLOCK_ONLY_HIGH'
                 ]
             ]
         ];
@@ -1841,11 +1839,12 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
         
         if ($httpCode === 429) {
             aiLog("Rate limit hit for $model, trying next model", 'WARNING');
+            usleep(500000); // Wait 0.5 seconds before trying next
             continue;
         }
         
         if ($httpCode === 404) {
-            aiLog("Model $model not found - may need different API key", 'ERROR');
+            aiLog("Model $model not found", 'ERROR');
             continue;
         }
         
@@ -1859,25 +1858,28 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
         if ($httpCode === 200 && $response) {
             $result = json_decode($response, true);
             
-            // Check if response was blocked
-            if (isset($result['candidates'][0]['finishReason']) && $result['candidates'][0]['finishReason'] === 'SAFETY') {
-                aiLog("Response blocked by safety filters for $model", 'WARNING');
-                continue;
+            // Check if response was blocked by safety
+            if (isset($result['candidates'][0]['finishReason'])) {
+                $finishReason = $result['candidates'][0]['finishReason'];
+                if ($finishReason === 'SAFETY' || $finishReason === 'RECITATION') {
+                    aiLog("Response blocked by $finishReason for $model, trying next", 'WARNING');
+                    continue;
+                }
             }
             
             if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
                 $responseText = $result['candidates'][0]['content']['parts'][0]['text'];
-                aiLog("Gemini API success with $model - Response length: " . strlen($responseText), 'INFO');
+                aiLog("Gemini API SUCCESS with $model - Response length: " . strlen($responseText), 'INFO');
                 return $responseText;
             } else {
-                aiLog("Gemini API response structure error for $model: " . json_encode($result), 'ERROR');
+                aiLog("Gemini API response missing text for $model: " . json_encode($result), 'ERROR');
             }
         } else {
-            aiLog("Gemini API failed for $model - Response: " . substr($response, 0, 500), 'ERROR');
+            aiLog("Gemini API failed for $model - HTTP $httpCode: " . substr($response, 0, 300), 'ERROR');
         }
     }
     
-    aiLog("All Gemini models failed", 'ERROR');
+    aiLog("All Gemini models failed - returning fallback", 'ERROR');
     return null;
 }
 
@@ -1953,8 +1955,8 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
     
     $apiKey = !empty($GEMINI_API_KEY) ? $GEMINI_API_KEY : $GOOGLE_IMAGEN_API_KEY;
     
-    // Use Gemini 2.5 Flash (exp) for images
-    $models = ['gemini-2.0-flash-exp', 'gemini-1.5-flash'];
+    // Use multimodal models from your dashboard
+    $models = ['gemini-2.5-flash-tts', 'gemini-2.5-flash'];
     
     foreach ($models as $model) {
         aiLog("analyzeImageWithGemini: Trying model $model", 'INFO');
@@ -1979,19 +1981,19 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
             'safetySettings' => [
                 [
                     'category' => 'HARM_CATEGORY_HARASSMENT',
-                    'threshold' => 'BLOCK_NONE'
+                    'threshold' => 'BLOCK_ONLY_HIGH'
                 ],
                 [
                     'category' => 'HARM_CATEGORY_HATE_SPEECH',
-                    'threshold' => 'BLOCK_NONE'
+                    'threshold' => 'BLOCK_ONLY_HIGH'
                 ],
                 [
                     'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-                    'threshold' => 'BLOCK_NONE'
+                    'threshold' => 'BLOCK_ONLY_HIGH'
                 ],
                 [
                     'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
-                    'threshold' => 'BLOCK_NONE'
+                    'threshold' => 'BLOCK_ONLY_HIGH'
                 ]
             ]
         ];
@@ -2019,10 +2021,8 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
                 aiLog("analyzeImageWithGemini: Success with $model", 'INFO');
                 return $result['candidates'][0]['content']['parts'][0]['text'];
             } else {
-                aiLog("analyzeImageWithGemini: Invalid response structure from $model", 'ERROR');
+                aiLog("analyzeImageWithGemini: Invalid response from $model", 'ERROR');
             }
-        } elseif ($httpCode === 404) {
-            aiLog("analyzeImageWithGemini: Model $model not found", 'ERROR');
         } else {
             aiLog("analyzeImageWithGemini: HTTP $httpCode - " . substr($response, 0, 200), 'ERROR');
         }
@@ -2740,22 +2740,27 @@ try {
             $donateMsg .= "Choose your preferred method below:\n\n";
             $donateMsg .= "🙏 Every contribution is greatly appreciated!";
             
+            // Simplified keyboard with working callback data
             $keyboard = [
                 'inline_keyboard' => [
                     [
                         ['text' => '💰 Donate via Ko-fi', 'url' => 'https://ko-fi.com/calvin_munene#checkoutModal']
                     ],
                     [
-                        ['text' => '⭐ 100 Stars (Supporter)', 'callback_data' => 'donate_100'],
-                        ['text' => '⭐ 500 Stars (Premium)', 'callback_data' => 'donate_500']
+                        ['text' => '⭐ 100 Stars', 'callback_data' => 'stars_100']
                     ],
                     [
-                        ['text' => '⭐ 1000 Stars (Premium+)', 'callback_data' => 'donate_1000']
+                        ['text' => '⭐ 500 Stars', 'callback_data' => 'stars_500']
+                    ],
+                    [
+                        ['text' => '⭐ 1000 Stars', 'callback_data' => 'stars_1000']
                     ]
                 ]
             ];
             
             sendTelegramMessage($chatId, formatRichResponse($donateMsg, 'donation'), $TELEGRAM_BOT_TOKEN, json_encode($keyboard));
+            
+            aiLog("Donate menu sent to user $userId", 'INFO');
             
             http_response_code(200);
             exit(json_encode(['status' => 'ok']));
