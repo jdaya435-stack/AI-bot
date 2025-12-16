@@ -1955,8 +1955,8 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
     
     $apiKey = !empty($GEMINI_API_KEY) ? $GEMINI_API_KEY : $GOOGLE_IMAGEN_API_KEY;
     
-    // Use multimodal models from your dashboard
-    $models = ['gemini-2.5-flash-tts', 'gemini-2.5-flash'];
+    // Use gemini-2.5-flash for image analysis (has vision capabilities)
+    $models = ['gemini-2.5-flash', 'gemini-2.5-flash-tts'];
     
     foreach ($models as $model) {
         aiLog("analyzeImageWithGemini: Trying model $model", 'INFO');
@@ -1976,6 +1976,8 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
             ],
             'generationConfig' => [
                 'temperature' => 0.7,
+                'topK' => 40,
+                'topP' => 0.95,
                 'maxOutputTokens' => 8192
             ],
             'safetySettings' => [
@@ -2011,24 +2013,46 @@ function analyzeImageWithGemini($imageBase64, $imageMimeType, $prompt = "Analyze
         
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
+        
+        if ($curlError) {
+            aiLog("analyzeImageWithGemini: CURL error for $model: $curlError", 'ERROR');
+            continue;
+        }
         
         aiLog("analyzeImageWithGemini: Model $model returned HTTP $httpCode", 'INFO');
         
         if ($httpCode === 200) {
             $result = json_decode($response, true);
+            
+            // Check for safety blocks
+            if (isset($result['candidates'][0]['finishReason'])) {
+                $finishReason = $result['candidates'][0]['finishReason'];
+                if ($finishReason === 'SAFETY' || $finishReason === 'RECITATION') {
+                    aiLog("analyzeImageWithGemini: Response blocked by $finishReason for $model", 'WARNING');
+                    continue;
+                }
+            }
+            
             if (isset($result['candidates'][0]['content']['parts'][0]['text'])) {
-                aiLog("analyzeImageWithGemini: Success with $model", 'INFO');
+                aiLog("analyzeImageWithGemini: SUCCESS with $model", 'INFO');
                 return $result['candidates'][0]['content']['parts'][0]['text'];
             } else {
-                aiLog("analyzeImageWithGemini: Invalid response from $model", 'ERROR');
+                aiLog("analyzeImageWithGemini: Invalid response from $model: " . json_encode($result), 'ERROR');
             }
+        } elseif ($httpCode === 404) {
+            aiLog("analyzeImageWithGemini: Model $model not found", 'ERROR');
+        } elseif ($httpCode === 400) {
+            $errorData = json_decode($response, true);
+            $errorMsg = $errorData['error']['message'] ?? 'Unknown error';
+            aiLog("analyzeImageWithGemini: Bad request for $model: $errorMsg", 'ERROR');
         } else {
-            aiLog("analyzeImageWithGemini: HTTP $httpCode - " . substr($response, 0, 200), 'ERROR');
+            aiLog("analyzeImageWithGemini: HTTP $httpCode - " . substr($response, 0, 300), 'ERROR');
         }
     }
     
-    aiLog("analyzeImageWithGemini: All models failed", 'ERROR');
+    aiLog("analyzeImageWithGemini: All models failed for image analysis", 'ERROR');
     return null;
 }
 
