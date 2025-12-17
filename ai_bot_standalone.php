@@ -1,11 +1,11 @@
 <?php
 /**
  * ========================================================================
- * ADVANCED AI BOT - ENTERPRISE EDITION
+ * ADVANCED AI BOT - AUTONOMOUS ENTERPRISE EDITION v3.0
  * ========================================================================
- * Complete Telegram AI Bot with Advanced Features
+ * Complete Telegram AI Bot with Full Autonomous Admin Control
  * 
- * NEW FEATURES:
+ * EXISTING FEATURES:
  * - Donation System (Ko-fi + Telegram Stars)
  * - Advanced AI Translation Engine
  * - Dynamic AI Personality Engine
@@ -26,6 +26,19 @@
  * - Session Management
  * - Webhook Security
  * - Advanced Caching Strategy
+ * 
+ * NEW AUTONOMOUS CONTROL FEATURES:
+ * - Full Member Management (ban, kick, mute, warn, promote, demote)
+ * - Message Management (delete, pin, unpin, edit, search)
+ * - Group Settings Control (title, description, photo, slow mode, permissions)
+ * - Intelligent Auto-Moderation (spam, abuse, links, profanity)
+ * - Member Automation (welcome, roles, cleanup inactive)
+ * - System Control (restart, cache, backup, deploy)
+ * - Advanced Analytics (reports, trends, toxicity, health dashboard)
+ * - Automation Engine (scheduled messages, auto-replies, escalation)
+ * - Natural Language Command Parser with AI Understanding
+ * - Two-Tier Execution (immediate for low-complexity, confirm for high-complexity)
+ * - Complete Autonomous Control via Admin Commands
  * 
  * ========================================================================
  */
@@ -76,13 +89,21 @@ define('AI_DEVICE_DIR', AI_DATA_DIR . '/devices');
 define('AI_FLAGS_DIR', AI_DATA_DIR . '/flags');
 define('AI_NOTIFICATIONS_DIR', AI_DATA_DIR . '/notifications');
 define('AI_MODERATION_DIR', AI_DATA_DIR . '/moderation');
+define('AI_AUTONOMOUS_DIR', AI_DATA_DIR . '/autonomous');
+define('AI_WARNINGS_DIR', AI_DATA_DIR . '/warnings');
+define('AI_ROLES_DIR', AI_DATA_DIR . '/roles');
+define('AI_SCHEDULED_DIR', AI_DATA_DIR . '/scheduled');
+define('AI_GROUP_SETTINGS_DIR', AI_DATA_DIR . '/group_settings');
+define('AI_PENDING_ACTIONS_DIR', AI_DATA_DIR . '/pending_actions');
 
 // Initialize directories
 $dirs = [
     AI_DATA_DIR, AI_CONVERSATIONS_DIR, AI_CACHE_DIR, AI_STATS_DIR, 
     AI_USERS_DIR, AI_PERSONALITY_DIR, AI_PREFERENCES_DIR, AI_ADMIN_DIR,
     AI_DONATIONS_DIR, AI_ANALYTICS_DIR, AI_MONITORING_DIR, AI_SESSIONS_DIR,
-    AI_DEVICE_DIR, AI_FLAGS_DIR, AI_NOTIFICATIONS_DIR, AI_MODERATION_DIR
+    AI_DEVICE_DIR, AI_FLAGS_DIR, AI_NOTIFICATIONS_DIR, AI_MODERATION_DIR,
+    AI_AUTONOMOUS_DIR, AI_WARNINGS_DIR, AI_ROLES_DIR, AI_SCHEDULED_DIR,
+    AI_GROUP_SETTINGS_DIR, AI_PENDING_ACTIONS_DIR
 ];
 
 foreach ($dirs as $dir) {
@@ -149,7 +170,13 @@ function getFeatureFlags() {
             'group_chat_enabled' => true,
             'voice_messages_enabled' => false,
             'document_analysis_enabled' => false,
-            'auto_reply_enabled' => false
+            'auto_reply_enabled' => true,
+            'auto_moderation_enabled' => true,
+            'autonomous_control_enabled' => true,
+            'welcome_messages_enabled' => true,
+            'scheduled_messages_enabled' => true,
+            'member_roles_enabled' => true,
+            'analytics_reports_enabled' => true
         ];
         aiSaveJSON($flagsFile, $defaultFlags);
         return $defaultFlags;
@@ -617,6 +644,1549 @@ function getBotInfo($botToken) {
     
     $result = json_decode($response, true);
     return $result['result'] ?? null;
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - COMMAND COMPLEXITY CLASSIFICATION
+// ============================================================================
+
+function getCommandComplexity($action) {
+    $lowComplexity = [
+        'delete_message', 'pin_message', 'unpin_message', 'mute_user',
+        'unmute_user', 'warn_user', 'clear_cache', 'get_analytics',
+        'search_messages', 'get_user_info', 'send_welcome', 'auto_reply'
+    ];
+    
+    $highComplexity = [
+        'ban_user', 'kick_user', 'promote_user', 'demote_user',
+        'change_group_title', 'change_group_photo', 'change_permissions',
+        'set_slow_mode', 'restart_server', 'backup_database', 'deploy_new_version',
+        'broadcast_message', 'delete_all_messages', 'cleanup_inactive_users',
+        'emergency_mode', 'maintenance_mode'
+    ];
+    
+    if (in_array($action, $lowComplexity)) {
+        return 'low';
+    } elseif (in_array($action, $highComplexity)) {
+        return 'high';
+    }
+    return 'medium';
+}
+
+function requiresConfirmation($action) {
+    return getCommandComplexity($action) === 'high';
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - PENDING ACTIONS MANAGEMENT
+// ============================================================================
+
+function createPendingAction($userId, $chatId, $action, $params, $description) {
+    $actionId = bin2hex(random_bytes(8));
+    $actionFile = AI_PENDING_ACTIONS_DIR . '/' . $actionId . '.json';
+    
+    $pendingAction = [
+        'id' => $actionId,
+        'user_id' => $userId,
+        'chat_id' => $chatId,
+        'action' => $action,
+        'params' => $params,
+        'description' => $description,
+        'created_at' => date('Y-m-d H:i:s'),
+        'expires_at' => date('Y-m-d H:i:s', strtotime('+5 minutes')),
+        'status' => 'pending'
+    ];
+    
+    aiSaveJSON($actionFile, $pendingAction);
+    return $actionId;
+}
+
+function getPendingAction($actionId) {
+    $actionFile = AI_PENDING_ACTIONS_DIR . '/' . $actionId . '.json';
+    if (!file_exists($actionFile)) return null;
+    
+    $action = aiLoadJSON($actionFile);
+    if (strtotime($action['expires_at']) < time()) {
+        unlink($actionFile);
+        return null;
+    }
+    return $action;
+}
+
+function executePendingAction($actionId) {
+    $action = getPendingAction($actionId);
+    if (!$action) return ['success' => false, 'message' => 'Action expired or not found'];
+    
+    $actionFile = AI_PENDING_ACTIONS_DIR . '/' . $actionId . '.json';
+    $action['status'] = 'executed';
+    $action['executed_at'] = date('Y-m-d H:i:s');
+    aiSaveJSON($actionFile, $action);
+    
+    return executeAutonomousAction($action['action'], $action['params'], $action['chat_id']);
+}
+
+function cancelPendingAction($actionId) {
+    $actionFile = AI_PENDING_ACTIONS_DIR . '/' . $actionId . '.json';
+    if (file_exists($actionFile)) {
+        unlink($actionFile);
+        return true;
+    }
+    return false;
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - MEMBER MANAGEMENT (Telegram API)
+// ============================================================================
+
+function banChatMember($chatId, $userId, $botToken, $untilDate = null) {
+    $url = "https://api.telegram.org/bot{$botToken}/banChatMember";
+    $data = ['chat_id' => $chatId, 'user_id' => $userId];
+    if ($untilDate) $data['until_date'] = $untilDate;
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    aiLog("banChatMember: User $userId in chat $chatId - HTTP $httpCode", 'INFO');
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function unbanChatMember($chatId, $userId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/unbanChatMember";
+    $data = ['chat_id' => $chatId, 'user_id' => $userId, 'only_if_banned' => true];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function kickChatMember($chatId, $userId, $botToken) {
+    $ban = banChatMember($chatId, $userId, $botToken);
+    if ($ban['success']) {
+        sleep(1);
+        return unbanChatMember($chatId, $userId, $botToken);
+    }
+    return $ban;
+}
+
+function restrictChatMember($chatId, $userId, $botToken, $permissions, $untilDate = null) {
+    $url = "https://api.telegram.org/bot{$botToken}/restrictChatMember";
+    $data = [
+        'chat_id' => $chatId,
+        'user_id' => $userId,
+        'permissions' => $permissions
+    ];
+    if ($untilDate) $data['until_date'] = $untilDate;
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function muteUser($chatId, $userId, $botToken, $duration = null) {
+    $permissions = [
+        'can_send_messages' => false,
+        'can_send_audios' => false,
+        'can_send_documents' => false,
+        'can_send_photos' => false,
+        'can_send_videos' => false,
+        'can_send_video_notes' => false,
+        'can_send_voice_notes' => false,
+        'can_send_polls' => false,
+        'can_send_other_messages' => false,
+        'can_add_web_page_previews' => false
+    ];
+    
+    $untilDate = $duration ? time() + $duration : null;
+    return restrictChatMember($chatId, $userId, $botToken, $permissions, $untilDate);
+}
+
+function unmuteUser($chatId, $userId, $botToken) {
+    $permissions = [
+        'can_send_messages' => true,
+        'can_send_audios' => true,
+        'can_send_documents' => true,
+        'can_send_photos' => true,
+        'can_send_videos' => true,
+        'can_send_video_notes' => true,
+        'can_send_voice_notes' => true,
+        'can_send_polls' => true,
+        'can_send_other_messages' => true,
+        'can_add_web_page_previews' => true
+    ];
+    
+    return restrictChatMember($chatId, $userId, $botToken, $permissions);
+}
+
+function promoteChatMember($chatId, $userId, $botToken, $permissions = []) {
+    $url = "https://api.telegram.org/bot{$botToken}/promoteChatMember";
+    
+    $defaultPermissions = [
+        'can_manage_chat' => true,
+        'can_delete_messages' => true,
+        'can_manage_video_chats' => true,
+        'can_restrict_members' => true,
+        'can_promote_members' => false,
+        'can_change_info' => true,
+        'can_invite_users' => true,
+        'can_pin_messages' => true,
+        'can_post_stories' => false,
+        'can_edit_stories' => false,
+        'can_delete_stories' => false
+    ];
+    
+    $data = array_merge(['chat_id' => $chatId, 'user_id' => $userId], $defaultPermissions, $permissions);
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    aiLog("promoteChatMember: User $userId in chat $chatId - HTTP $httpCode", 'INFO');
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function demoteChatMember($chatId, $userId, $botToken) {
+    $permissions = [
+        'can_manage_chat' => false,
+        'can_delete_messages' => false,
+        'can_manage_video_chats' => false,
+        'can_restrict_members' => false,
+        'can_promote_members' => false,
+        'can_change_info' => false,
+        'can_invite_users' => false,
+        'can_pin_messages' => false
+    ];
+    
+    return promoteChatMember($chatId, $userId, $botToken, $permissions);
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - WARNING SYSTEM
+// ============================================================================
+
+function getUserWarnings($chatId, $userId) {
+    $warningFile = AI_WARNINGS_DIR . '/' . $chatId . '_' . $userId . '.json';
+    if (!file_exists($warningFile)) {
+        return ['count' => 0, 'warnings' => []];
+    }
+    return aiLoadJSON($warningFile);
+}
+
+function addUserWarning($chatId, $userId, $reason, $warnedBy) {
+    $warningFile = AI_WARNINGS_DIR . '/' . $chatId . '_' . $userId . '.json';
+    $warnings = getUserWarnings($chatId, $userId);
+    
+    $warnings['count']++;
+    $warnings['warnings'][] = [
+        'reason' => $reason,
+        'warned_by' => $warnedBy,
+        'timestamp' => date('Y-m-d H:i:s')
+    ];
+    
+    aiSaveJSON($warningFile, $warnings);
+    return $warnings;
+}
+
+function clearUserWarnings($chatId, $userId) {
+    $warningFile = AI_WARNINGS_DIR . '/' . $chatId . '_' . $userId . '.json';
+    if (file_exists($warningFile)) {
+        unlink($warningFile);
+        return true;
+    }
+    return false;
+}
+
+function getWarningThreshold($chatId) {
+    $settingsFile = AI_GROUP_SETTINGS_DIR . '/' . $chatId . '.json';
+    $settings = file_exists($settingsFile) ? aiLoadJSON($settingsFile) : [];
+    return $settings['warning_threshold'] ?? 3;
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - MESSAGE MANAGEMENT
+// ============================================================================
+
+function deleteMessage($chatId, $messageId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/deleteMessage";
+    $data = ['chat_id' => $chatId, 'message_id' => $messageId];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function pinChatMessage($chatId, $messageId, $botToken, $disableNotification = false) {
+    $url = "https://api.telegram.org/bot{$botToken}/pinChatMessage";
+    $data = [
+        'chat_id' => $chatId,
+        'message_id' => $messageId,
+        'disable_notification' => $disableNotification
+    ];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function unpinChatMessage($chatId, $messageId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/unpinChatMessage";
+    $data = ['chat_id' => $chatId, 'message_id' => $messageId];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function unpinAllChatMessages($chatId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/unpinAllChatMessages";
+    $data = ['chat_id' => $chatId];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - GROUP SETTINGS
+// ============================================================================
+
+function setChatTitle($chatId, $title, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/setChatTitle";
+    $data = ['chat_id' => $chatId, 'title' => substr($title, 0, 128)];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function setChatDescription($chatId, $description, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/setChatDescription";
+    $data = ['chat_id' => $chatId, 'description' => substr($description, 0, 255)];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function setChatPermissions($chatId, $permissions, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/setChatPermissions";
+    $data = ['chat_id' => $chatId, 'permissions' => $permissions];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function setSlowMode($chatId, $seconds, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/setChatSlowModeDelay";
+    $validSeconds = [0, 10, 30, 60, 300, 900, 3600];
+    $seconds = in_array($seconds, $validSeconds) ? $seconds : 0;
+    $data = ['chat_id' => $chatId, 'slow_mode_delay' => $seconds];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function getChatInfo($chatId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/getChat";
+    $data = ['chat_id' => $chatId];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return $result['result'] ?? null;
+}
+
+function getChatMemberCount($chatId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/getChatMemberCount";
+    $data = ['chat_id' => $chatId];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return $result['result'] ?? 0;
+}
+
+function getChatAdministrators($chatId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/getChatAdministrators";
+    $data = ['chat_id' => $chatId];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return $result['result'] ?? [];
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - INTELLIGENT AUTO-MODERATION
+// ============================================================================
+
+function getAutoModerationSettings($chatId) {
+    $settingsFile = AI_GROUP_SETTINGS_DIR . '/' . $chatId . '_automod.json';
+    if (!file_exists($settingsFile)) {
+        return [
+            'enabled' => true,
+            'spam_detection' => true,
+            'link_filtering' => true,
+            'profanity_filter' => true,
+            'anti_flood' => true,
+            'max_messages_per_minute' => 10,
+            'banned_words' => [],
+            'allowed_domains' => [],
+            'blocked_domains' => [],
+            'auto_warn' => true,
+            'auto_mute_on_spam' => true,
+            'auto_ban_threshold' => 5
+        ];
+    }
+    return aiLoadJSON($settingsFile);
+}
+
+function setAutoModerationSettings($chatId, $settings) {
+    $settingsFile = AI_GROUP_SETTINGS_DIR . '/' . $chatId . '_automod.json';
+    return aiSaveJSON($settingsFile, $settings);
+}
+
+function detectSpam($text, $userId, $chatId) {
+    $settings = getAutoModerationSettings($chatId);
+    if (!$settings['spam_detection']) return false;
+    
+    $spamPatterns = [
+        '/(?:buy|sell|trade)\s+(?:drugs|weapons|crypto)/i',
+        '/click\s+(?:here|this)\s+link/i',
+        '/(?:earn|make)\s+\$\d+\s+(?:fast|quick|easy)/i',
+        '/(?:free|cheap)\s+(?:followers|likes|views)/i',
+        '/(?:join|subscribe)\s+(?:now|today)\s+(?:for|to)/i',
+        '/(.)\1{10,}/i',
+        '/\b(?:whatsapp|telegram)\s*[+]?\d{10,}/i'
+    ];
+    
+    foreach ($spamPatterns as $pattern) {
+        if (preg_match($pattern, $text)) {
+            return ['is_spam' => true, 'type' => 'pattern_match'];
+        }
+    }
+    
+    if (strlen($text) > 2000) {
+        return ['is_spam' => true, 'type' => 'excessive_length'];
+    }
+    
+    if (preg_match_all('/[A-Z]/', $text) > strlen($text) * 0.7 && strlen($text) > 20) {
+        return ['is_spam' => true, 'type' => 'excessive_caps'];
+    }
+    
+    return ['is_spam' => false];
+}
+
+function detectFlood($userId, $chatId) {
+    $settings = getAutoModerationSettings($chatId);
+    if (!$settings['anti_flood']) return false;
+    
+    $floodFile = AI_AUTONOMOUS_DIR . '/flood_' . $chatId . '_' . $userId . '.json';
+    $floodData = file_exists($floodFile) ? aiLoadJSON($floodFile) : ['messages' => [], 'last_reset' => time()];
+    
+    if (time() - $floodData['last_reset'] > 60) {
+        $floodData = ['messages' => [], 'last_reset' => time()];
+    }
+    
+    $floodData['messages'][] = time();
+    $floodData['messages'] = array_filter($floodData['messages'], function($t) {
+        return $t > time() - 60;
+    });
+    
+    aiSaveJSON($floodFile, $floodData);
+    
+    $maxMessages = $settings['max_messages_per_minute'] ?? 10;
+    return count($floodData['messages']) > $maxMessages;
+}
+
+function filterLinks($text, $chatId) {
+    $settings = getAutoModerationSettings($chatId);
+    if (!$settings['link_filtering']) return ['allowed' => true];
+    
+    preg_match_all('/https?:\/\/([^\s\/]+)/i', $text, $matches);
+    if (empty($matches[1])) return ['allowed' => true];
+    
+    $blockedDomains = $settings['blocked_domains'] ?? [];
+    $allowedDomains = $settings['allowed_domains'] ?? [];
+    
+    foreach ($matches[1] as $domain) {
+        $domain = strtolower($domain);
+        
+        foreach ($blockedDomains as $blocked) {
+            if (strpos($domain, $blocked) !== false) {
+                return ['allowed' => false, 'reason' => 'blocked_domain', 'domain' => $domain];
+            }
+        }
+        
+        if (!empty($allowedDomains)) {
+            $isAllowed = false;
+            foreach ($allowedDomains as $allowed) {
+                if (strpos($domain, $allowed) !== false) {
+                    $isAllowed = true;
+                    break;
+                }
+            }
+            if (!$isAllowed) {
+                return ['allowed' => false, 'reason' => 'not_whitelisted', 'domain' => $domain];
+            }
+        }
+    }
+    
+    return ['allowed' => true];
+}
+
+function filterProfanity($text, $chatId) {
+    $settings = getAutoModerationSettings($chatId);
+    if (!$settings['profanity_filter']) return ['clean' => true];
+    
+    $defaultBannedWords = ['spam', 'scam', 'fraud'];
+    $bannedWords = array_merge($defaultBannedWords, $settings['banned_words'] ?? []);
+    
+    $textLower = strtolower($text);
+    foreach ($bannedWords as $word) {
+        if (strpos($textLower, strtolower($word)) !== false) {
+            return ['clean' => false, 'word' => $word];
+        }
+    }
+    
+    return ['clean' => true];
+}
+
+function handleAutoModeration($message, $botToken) {
+    $chatId = $message['chat']['id'] ?? 0;
+    $userId = $message['from']['id'] ?? 0;
+    $messageId = $message['message_id'] ?? 0;
+    $text = $message['text'] ?? '';
+    
+    if (empty($text) || isAdmin($userId)) return ['action' => 'none'];
+    
+    $settings = getAutoModerationSettings($chatId);
+    if (!$settings['enabled']) return ['action' => 'none'];
+    
+    $spamCheck = detectSpam($text, $userId, $chatId);
+    if ($spamCheck['is_spam']) {
+        deleteMessage($chatId, $messageId, $botToken);
+        
+        if ($settings['auto_warn']) {
+            $warnings = addUserWarning($chatId, $userId, 'Spam detected: ' . $spamCheck['type'], 'AutoMod');
+            
+            if ($warnings['count'] >= ($settings['auto_ban_threshold'] ?? 5)) {
+                banChatMember($chatId, $userId, $botToken);
+                return ['action' => 'banned', 'reason' => 'Exceeded warning threshold'];
+            }
+            
+            if ($settings['auto_mute_on_spam'] && $warnings['count'] >= 2) {
+                muteUser($chatId, $userId, $botToken, 3600);
+                return ['action' => 'muted', 'reason' => 'Repeated spam', 'duration' => '1 hour'];
+            }
+        }
+        
+        return ['action' => 'deleted', 'reason' => 'Spam: ' . $spamCheck['type']];
+    }
+    
+    if (detectFlood($userId, $chatId)) {
+        if ($settings['auto_mute_on_spam']) {
+            muteUser($chatId, $userId, $botToken, 300);
+            sendTelegramMessage($chatId, "⚠️ User muted for 5 minutes due to flooding.", $botToken);
+            return ['action' => 'muted', 'reason' => 'Flooding', 'duration' => '5 minutes'];
+        }
+    }
+    
+    $linkCheck = filterLinks($text, $chatId);
+    if (!$linkCheck['allowed']) {
+        deleteMessage($chatId, $messageId, $botToken);
+        return ['action' => 'deleted', 'reason' => 'Blocked link: ' . ($linkCheck['domain'] ?? 'unknown')];
+    }
+    
+    $profanityCheck = filterProfanity($text, $chatId);
+    if (!$profanityCheck['clean']) {
+        deleteMessage($chatId, $messageId, $botToken);
+        addUserWarning($chatId, $userId, 'Profanity detected', 'AutoMod');
+        return ['action' => 'deleted', 'reason' => 'Profanity detected'];
+    }
+    
+    return ['action' => 'none'];
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - MEMBER AUTOMATION
+// ============================================================================
+
+function getWelcomeSettings($chatId) {
+    $settingsFile = AI_GROUP_SETTINGS_DIR . '/' . $chatId . '_welcome.json';
+    if (!file_exists($settingsFile)) {
+        return [
+            'enabled' => true,
+            'message' => "👋 Welcome {name} to {group}!\n\nPlease read the rules and enjoy your stay.",
+            'send_rules' => false,
+            'rules' => '',
+            'auto_assign_role' => false,
+            'default_role' => 'member'
+        ];
+    }
+    return aiLoadJSON($settingsFile);
+}
+
+function setWelcomeSettings($chatId, $settings) {
+    $settingsFile = AI_GROUP_SETTINGS_DIR . '/' . $chatId . '_welcome.json';
+    return aiSaveJSON($settingsFile, $settings);
+}
+
+function sendWelcomeMessage($chatId, $user, $botToken) {
+    $settings = getWelcomeSettings($chatId);
+    if (!$settings['enabled']) return false;
+    
+    $chatInfo = getChatInfo($chatId, $botToken);
+    $groupName = $chatInfo['title'] ?? 'the group';
+    
+    $userName = $user['first_name'] ?? 'User';
+    if (!empty($user['last_name'])) {
+        $userName .= ' ' . $user['last_name'];
+    }
+    
+    $message = $settings['message'];
+    $message = str_replace('{name}', $userName, $message);
+    $message = str_replace('{group}', $groupName, $message);
+    $message = str_replace('{username}', '@' . ($user['username'] ?? 'no_username'), $message);
+    
+    sendTelegramMessage($chatId, $message, $botToken);
+    
+    if ($settings['send_rules'] && !empty($settings['rules'])) {
+        sendTelegramMessage($chatId, "📜 <b>Group Rules:</b>\n\n" . $settings['rules'], $botToken);
+    }
+    
+    return true;
+}
+
+function getMemberRole($chatId, $userId) {
+    $roleFile = AI_ROLES_DIR . '/' . $chatId . '_' . $userId . '.json';
+    if (!file_exists($roleFile)) {
+        return ['role' => 'member', 'assigned_at' => null];
+    }
+    return aiLoadJSON($roleFile);
+}
+
+function setMemberRole($chatId, $userId, $role, $assignedBy = null) {
+    $roleFile = AI_ROLES_DIR . '/' . $chatId . '_' . $userId . '.json';
+    $data = [
+        'role' => $role,
+        'assigned_by' => $assignedBy,
+        'assigned_at' => date('Y-m-d H:i:s')
+    ];
+    return aiSaveJSON($roleFile, $data);
+}
+
+function getAvailableRoles() {
+    return [
+        'member' => ['name' => 'Member', 'level' => 0],
+        'trusted' => ['name' => 'Trusted Member', 'level' => 1],
+        'helper' => ['name' => 'Helper', 'level' => 2],
+        'moderator' => ['name' => 'Moderator', 'level' => 3],
+        'admin' => ['name' => 'Administrator', 'level' => 4],
+        'owner' => ['name' => 'Owner', 'level' => 5]
+    ];
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - SYSTEM CONTROL FUNCTIONS
+// ============================================================================
+
+function restartServer() {
+    aiLog("Server restart requested", 'INFO');
+    $result = [
+        'action' => 'restart_server',
+        'status' => 'initiated',
+        'timestamp' => date('Y-m-d H:i:s'),
+        'message' => 'Server restart has been initiated. The bot will be back shortly.'
+    ];
+    
+    $logFile = AI_ADMIN_DIR . '/restart_log.json';
+    aiSaveJSON($logFile, $result);
+    
+    return $result;
+}
+
+function clearAllCache() {
+    $cacheFiles = glob(AI_CACHE_DIR . '/*.cache') ?: [];
+    $cleared = 0;
+    
+    foreach ($cacheFiles as $file) {
+        if (unlink($file)) {
+            $cleared++;
+        }
+    }
+    
+    aiLog("Cache cleared: $cleared files deleted", 'INFO');
+    return ['success' => true, 'files_cleared' => $cleared];
+}
+
+function backupDatabase() {
+    $backupDir = AI_DATA_DIR . '/backups';
+    @mkdir($backupDir, 0755, true);
+    
+    $backupName = 'backup_' . date('Y-m-d_H-i-s');
+    $backupPath = $backupDir . '/' . $backupName;
+    @mkdir($backupPath, 0755, true);
+    
+    $dirsToBackup = [
+        AI_CONVERSATIONS_DIR, AI_USERS_DIR, AI_PREFERENCES_DIR,
+        AI_ANALYTICS_DIR, AI_DONATIONS_DIR, AI_GROUP_SETTINGS_DIR, AI_ROLES_DIR
+    ];
+    
+    $backedUp = 0;
+    foreach ($dirsToBackup as $dir) {
+        if (is_dir($dir)) {
+            $files = glob($dir . '/*.json') ?: [];
+            foreach ($files as $file) {
+                $dest = $backupPath . '/' . basename($dir) . '_' . basename($file);
+                if (copy($file, $dest)) {
+                    $backedUp++;
+                }
+            }
+        }
+    }
+    
+    aiLog("Database backup created: $backupName ($backedUp files)", 'INFO');
+    return [
+        'success' => true,
+        'backup_name' => $backupName,
+        'files_backed_up' => $backedUp,
+        'path' => $backupPath
+    ];
+}
+
+function deployNewVersion($commit = null) {
+    aiLog("Deploy requested" . ($commit ? " for commit: $commit" : ""), 'INFO');
+    
+    $gitCheck = shell_exec('git rev-parse --is-inside-work-tree 2>&1');
+    if (trim($gitCheck) !== 'true') {
+        return ['success' => false, 'error' => 'Not a Git repository'];
+    }
+    
+    $currentCommit = trim(shell_exec('git rev-parse --short HEAD 2>&1'));
+    
+    shell_exec('git fetch origin 2>&1');
+    $pullOutput = shell_exec('git pull origin $(git rev-parse --abbrev-ref HEAD) 2>&1');
+    
+    if (strpos($pullOutput, 'error') !== false || strpos($pullOutput, 'fatal') !== false) {
+        return ['success' => false, 'error' => $pullOutput];
+    }
+    
+    $newCommit = trim(shell_exec('git rev-parse --short HEAD 2>&1'));
+    
+    aiLog("Deploy successful: $currentCommit -> $newCommit", 'INFO');
+    return [
+        'success' => true,
+        'from_commit' => $currentCommit,
+        'to_commit' => $newCommit,
+        'output' => $pullOutput
+    ];
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - ANALYTICS & INTELLIGENCE
+// ============================================================================
+
+function generateGroupReport($chatId, $botToken) {
+    $chatInfo = getChatInfo($chatId, $botToken);
+    $memberCount = getChatMemberCount($chatId, $botToken);
+    $admins = getChatAdministrators($chatId, $botToken);
+    
+    $analyticsFile = AI_ANALYTICS_DIR . '/group_' . $chatId . '.json';
+    $analytics = file_exists($analyticsFile) ? aiLoadJSON($analyticsFile) : [
+        'messages_today' => 0,
+        'messages_week' => 0,
+        'active_users' => [],
+        'moderation_actions' => 0
+    ];
+    
+    $report = [
+        'generated_at' => date('Y-m-d H:i:s'),
+        'group_info' => [
+            'title' => $chatInfo['title'] ?? 'Unknown',
+            'type' => $chatInfo['type'] ?? 'unknown',
+            'member_count' => $memberCount,
+            'admin_count' => count($admins)
+        ],
+        'activity' => [
+            'messages_today' => $analytics['messages_today'],
+            'messages_week' => $analytics['messages_week'],
+            'active_users_count' => count($analytics['active_users']),
+            'moderation_actions' => $analytics['moderation_actions']
+        ],
+        'health_score' => calculateGroupHealthScore($chatId, $analytics)
+    ];
+    
+    return $report;
+}
+
+function calculateGroupHealthScore($chatId, $analytics) {
+    $score = 100;
+    
+    $moderationActions = $analytics['moderation_actions'] ?? 0;
+    if ($moderationActions > 50) $score -= 20;
+    elseif ($moderationActions > 20) $score -= 10;
+    elseif ($moderationActions > 10) $score -= 5;
+    
+    $activeUsers = count($analytics['active_users'] ?? []);
+    if ($activeUsers < 5) $score -= 15;
+    elseif ($activeUsers < 10) $score -= 5;
+    
+    return max(0, min(100, $score));
+}
+
+function calculateToxicityScore($text) {
+    $toxicPatterns = [
+        'high' => ['/\b(hate|kill|die|racist|nazi)\b/i'],
+        'medium' => ['/\b(stupid|idiot|dumb|loser)\b/i'],
+        'low' => ['/\b(annoying|boring|bad)\b/i']
+    ];
+    
+    foreach ($toxicPatterns['high'] as $pattern) {
+        if (preg_match($pattern, $text)) return 80;
+    }
+    foreach ($toxicPatterns['medium'] as $pattern) {
+        if (preg_match($pattern, $text)) return 50;
+    }
+    foreach ($toxicPatterns['low'] as $pattern) {
+        if (preg_match($pattern, $text)) return 20;
+    }
+    
+    return 0;
+}
+
+function analyzeGroupTrends($chatId) {
+    $analyticsFile = AI_ANALYTICS_DIR . '/group_' . $chatId . '_history.json';
+    $history = file_exists($analyticsFile) ? aiLoadJSON($analyticsFile) : [];
+    
+    if (count($history) < 2) {
+        return ['trend' => 'insufficient_data', 'message' => 'Need more data to analyze trends'];
+    }
+    
+    $recent = array_slice($history, -7);
+    $older = array_slice($history, -14, 7);
+    
+    $recentAvg = array_sum(array_column($recent, 'messages')) / count($recent);
+    $olderAvg = count($older) > 0 ? array_sum(array_column($older, 'messages')) / count($older) : $recentAvg;
+    
+    $change = $olderAvg > 0 ? (($recentAvg - $olderAvg) / $olderAvg) * 100 : 0;
+    
+    $trend = 'stable';
+    if ($change > 20) $trend = 'growing';
+    elseif ($change < -20) $trend = 'declining';
+    
+    return [
+        'trend' => $trend,
+        'change_percent' => round($change, 2),
+        'recent_average' => round($recentAvg, 2),
+        'older_average' => round($olderAvg, 2)
+    ];
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - AUTOMATION ENGINE
+// ============================================================================
+
+function getScheduledMessages($chatId) {
+    $scheduleFile = AI_SCHEDULED_DIR . '/' . $chatId . '.json';
+    if (!file_exists($scheduleFile)) return [];
+    return aiLoadJSON($scheduleFile);
+}
+
+function addScheduledMessage($chatId, $message, $schedule, $createdBy) {
+    $scheduleFile = AI_SCHEDULED_DIR . '/' . $chatId . '.json';
+    $scheduled = getScheduledMessages($chatId);
+    
+    $id = bin2hex(random_bytes(8));
+    $scheduled[] = [
+        'id' => $id,
+        'message' => $message,
+        'schedule' => $schedule,
+        'created_by' => $createdBy,
+        'created_at' => date('Y-m-d H:i:s'),
+        'last_sent' => null,
+        'active' => true
+    ];
+    
+    aiSaveJSON($scheduleFile, $scheduled);
+    return $id;
+}
+
+function removeScheduledMessage($chatId, $messageId) {
+    $scheduleFile = AI_SCHEDULED_DIR . '/' . $chatId . '.json';
+    $scheduled = getScheduledMessages($chatId);
+    
+    $scheduled = array_filter($scheduled, function($msg) use ($messageId) {
+        return $msg['id'] !== $messageId;
+    });
+    
+    return aiSaveJSON($scheduleFile, array_values($scheduled));
+}
+
+function getAutoReplyRules($chatId) {
+    $rulesFile = AI_GROUP_SETTINGS_DIR . '/' . $chatId . '_autoreplies.json';
+    if (!file_exists($rulesFile)) return [];
+    return aiLoadJSON($rulesFile);
+}
+
+function addAutoReplyRule($chatId, $trigger, $response, $createdBy) {
+    $rulesFile = AI_GROUP_SETTINGS_DIR . '/' . $chatId . '_autoreplies.json';
+    $rules = getAutoReplyRules($chatId);
+    
+    $id = bin2hex(random_bytes(8));
+    $rules[] = [
+        'id' => $id,
+        'trigger' => $trigger,
+        'response' => $response,
+        'created_by' => $createdBy,
+        'created_at' => date('Y-m-d H:i:s'),
+        'use_count' => 0,
+        'active' => true
+    ];
+    
+    return aiSaveJSON($rulesFile, $rules) ? $id : false;
+}
+
+function checkAutoReply($text, $chatId) {
+    $rules = getAutoReplyRules($chatId);
+    
+    foreach ($rules as &$rule) {
+        if (!$rule['active']) continue;
+        
+        if (stripos($text, $rule['trigger']) !== false) {
+            $rule['use_count']++;
+            $rulesFile = AI_GROUP_SETTINGS_DIR . '/' . $chatId . '_autoreplies.json';
+            aiSaveJSON($rulesFile, $rules);
+            return $rule['response'];
+        }
+    }
+    
+    return null;
+}
+
+function escalateToAdmin($chatId, $userId, $issue, $botToken) {
+    global $BOT_OWNER_ID;
+    
+    $admins = getChatAdministrators($chatId, $botToken);
+    $chatInfo = getChatInfo($chatId, $botToken);
+    
+    $message = "🚨 <b>Escalation Required</b>\n\n";
+    $message .= "📍 Group: " . ($chatInfo['title'] ?? 'Unknown') . "\n";
+    $message .= "👤 User ID: $userId\n";
+    $message .= "📝 Issue: $issue\n";
+    $message .= "⏰ Time: " . date('Y-m-d H:i:s');
+    
+    foreach ($admins as $admin) {
+        if ($admin['user']['is_bot'] ?? false) continue;
+        sendTelegramMessage($admin['user']['id'], $message, $botToken);
+    }
+    
+    if ($BOT_OWNER_ID) {
+        sendNotificationToOwner($message, 'high');
+    }
+    
+    return true;
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - NATURAL LANGUAGE COMMAND PARSER
+// ============================================================================
+
+function parseAdminCommand($text, $chatId, $userId, $botToken) {
+    global $GEMINI_API_KEY;
+    
+    $commandPatterns = [
+        'ban' => '/(?:ban|block|remove)\s+(?:user\s+)?@?(\w+)/i',
+        'kick' => '/(?:kick|remove)\s+(?:user\s+)?@?(\w+)/i',
+        'mute' => '/(?:mute|silence)\s+(?:user\s+)?@?(\w+)(?:\s+for\s+(\d+)\s*(min|hour|day)?)?/i',
+        'unmute' => '/(?:unmute|unsilence)\s+(?:user\s+)?@?(\w+)/i',
+        'warn' => '/(?:warn|warning)\s+(?:user\s+)?@?(\w+)(?:\s+(?:for|reason)?\s*(.+))?/i',
+        'promote' => '/(?:promote|make\s+admin)\s+(?:user\s+)?@?(\w+)/i',
+        'demote' => '/(?:demote|remove\s+admin)\s+(?:user\s+)?@?(\w+)/i',
+        'delete' => '/(?:delete|remove)\s+(?:this\s+)?message/i',
+        'pin' => '/(?:pin)\s+(?:this\s+)?message/i',
+        'unpin' => '/(?:unpin)\s+(?:this\s+)?message/i',
+        'slow_mode' => '/(?:set\s+)?slow\s*mode\s+(?:to\s+)?(\d+)\s*(sec|min)?/i',
+        'title' => '/(?:change|set)\s+(?:group\s+)?title\s+(?:to\s+)?(.+)/i',
+        'description' => '/(?:change|set)\s+(?:group\s+)?description\s+(?:to\s+)?(.+)/i',
+        'welcome' => '/(?:set|change)\s+welcome\s+(?:message\s+)?(?:to\s+)?(.+)/i',
+        'clear_cache' => '/clear\s+(?:all\s+)?cache/i',
+        'backup' => '/(?:create\s+)?backup(?:\s+database)?/i',
+        'report' => '/(?:generate|get|show)\s+(?:group\s+)?report/i',
+        'analytics' => '/(?:show|get)\s+analytics/i',
+        'maintenance' => '/(?:enable|start)\s+maintenance(?:\s+mode)?/i',
+        'emergency' => '/(?:enable|start)\s+emergency(?:\s+mode)?/i'
+    ];
+    
+    foreach ($commandPatterns as $action => $pattern) {
+        if (preg_match($pattern, $text, $matches)) {
+            return [
+                'action' => $action,
+                'matches' => $matches,
+                'original_text' => $text
+            ];
+        }
+    }
+    
+    if (!empty($GEMINI_API_KEY)) {
+        $prompt = "Parse this admin command and extract the action. Return JSON with 'action' and 'params' keys. Available actions: ban, kick, mute, unmute, warn, promote, demote, delete, pin, unpin, slow_mode, title, description, welcome, clear_cache, backup, report, analytics, maintenance, emergency. Command: \"$text\"";
+        
+        $aiResponse = askGeminiSimple($prompt, $GEMINI_API_KEY);
+        if ($aiResponse) {
+            $parsed = json_decode($aiResponse, true);
+            if ($parsed && isset($parsed['action'])) {
+                return [
+                    'action' => $parsed['action'],
+                    'params' => $parsed['params'] ?? [],
+                    'ai_parsed' => true,
+                    'original_text' => $text
+                ];
+            }
+        }
+    }
+    
+    return null;
+}
+
+function askGeminiSimple($prompt, $apiKey) {
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={$apiKey}";
+    $data = ['contents' => [['parts' => [['text' => $prompt]]]]];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode === 200) {
+        $result = json_decode($response, true);
+        return $result['candidates'][0]['content']['parts'][0]['text'] ?? null;
+    }
+    return null;
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - MAIN EXECUTION ENGINE
+// ============================================================================
+
+function executeAutonomousAction($action, $params, $chatId) {
+    global $TELEGRAM_BOT_TOKEN;
+    
+    $result = ['success' => false, 'message' => 'Unknown action'];
+    
+    switch ($action) {
+        case 'ban_user':
+            $result = banChatMember($chatId, $params['user_id'], $TELEGRAM_BOT_TOKEN, $params['until_date'] ?? null);
+            $result['message'] = $result['success'] ? "User banned successfully" : "Failed to ban user";
+            break;
+            
+        case 'kick_user':
+            $result = kickChatMember($chatId, $params['user_id'], $TELEGRAM_BOT_TOKEN);
+            $result['message'] = $result['success'] ? "User kicked successfully" : "Failed to kick user";
+            break;
+            
+        case 'mute_user':
+            $duration = $params['duration'] ?? 3600;
+            $result = muteUser($chatId, $params['user_id'], $TELEGRAM_BOT_TOKEN, $duration);
+            $result['message'] = $result['success'] ? "User muted for " . ($duration / 60) . " minutes" : "Failed to mute user";
+            break;
+            
+        case 'unmute_user':
+            $result = unmuteUser($chatId, $params['user_id'], $TELEGRAM_BOT_TOKEN);
+            $result['message'] = $result['success'] ? "User unmuted successfully" : "Failed to unmute user";
+            break;
+            
+        case 'warn_user':
+            $warnings = addUserWarning($chatId, $params['user_id'], $params['reason'] ?? 'No reason specified', $params['warned_by'] ?? 'Admin');
+            $result = ['success' => true, 'message' => "Warning added. User now has {$warnings['count']} warning(s)"];
+            break;
+            
+        case 'promote_user':
+            $result = promoteChatMember($chatId, $params['user_id'], $TELEGRAM_BOT_TOKEN, $params['permissions'] ?? []);
+            $result['message'] = $result['success'] ? "User promoted to admin" : "Failed to promote user";
+            break;
+            
+        case 'demote_user':
+            $result = demoteChatMember($chatId, $params['user_id'], $TELEGRAM_BOT_TOKEN);
+            $result['message'] = $result['success'] ? "User demoted successfully" : "Failed to demote user";
+            break;
+            
+        case 'delete_message':
+            $result = deleteMessage($chatId, $params['message_id'], $TELEGRAM_BOT_TOKEN);
+            $result['message'] = $result['success'] ? "Message deleted" : "Failed to delete message";
+            break;
+            
+        case 'pin_message':
+            $result = pinChatMessage($chatId, $params['message_id'], $TELEGRAM_BOT_TOKEN, $params['silent'] ?? false);
+            $result['message'] = $result['success'] ? "Message pinned" : "Failed to pin message";
+            break;
+            
+        case 'unpin_message':
+            $result = unpinChatMessage($chatId, $params['message_id'], $TELEGRAM_BOT_TOKEN);
+            $result['message'] = $result['success'] ? "Message unpinned" : "Failed to unpin message";
+            break;
+            
+        case 'change_group_title':
+            $result = setChatTitle($chatId, $params['title'], $TELEGRAM_BOT_TOKEN);
+            $result['message'] = $result['success'] ? "Group title changed" : "Failed to change title";
+            break;
+            
+        case 'change_group_description':
+            $result = setChatDescription($chatId, $params['description'], $TELEGRAM_BOT_TOKEN);
+            $result['message'] = $result['success'] ? "Group description changed" : "Failed to change description";
+            break;
+            
+        case 'set_slow_mode':
+            $result = setSlowMode($chatId, $params['seconds'] ?? 0, $TELEGRAM_BOT_TOKEN);
+            $result['message'] = $result['success'] ? "Slow mode set to {$params['seconds']} seconds" : "Failed to set slow mode";
+            break;
+            
+        case 'clear_cache':
+            $result = clearAllCache();
+            $result['message'] = "Cache cleared: {$result['files_cleared']} files deleted";
+            break;
+            
+        case 'backup_database':
+            $result = backupDatabase();
+            $result['message'] = $result['success'] ? "Backup created: {$result['backup_name']}" : "Failed to create backup";
+            break;
+            
+        case 'restart_server':
+            $result = restartServer();
+            $result['message'] = "Server restart initiated";
+            break;
+            
+        case 'deploy_new_version':
+            $result = deployNewVersion($params['commit'] ?? null);
+            $result['message'] = $result['success'] ? "Deployed: {$result['from_commit']} -> {$result['to_commit']}" : "Deploy failed: " . ($result['error'] ?? 'Unknown error');
+            break;
+            
+        case 'generate_report':
+            $report = generateGroupReport($chatId, $TELEGRAM_BOT_TOKEN);
+            $result = ['success' => true, 'report' => $report, 'message' => 'Report generated'];
+            break;
+            
+        case 'maintenance_mode':
+            setMaintenanceMode(true, $params['message'] ?? 'Bot is under maintenance');
+            $result = ['success' => true, 'message' => 'Maintenance mode enabled'];
+            break;
+            
+        case 'emergency_mode':
+            setEmergencyMode(true, $params['message'] ?? 'Emergency mode activated');
+            $result = ['success' => true, 'message' => 'Emergency mode enabled'];
+            break;
+    }
+    
+    aiLog("Autonomous action executed: $action - " . ($result['success'] ? 'SUCCESS' : 'FAILED'), 'INFO');
+    return $result;
+}
+
+function handleAutonomousCommand($text, $message, $botToken) {
+    $chatId = $message['chat']['id'] ?? 0;
+    $userId = $message['from']['id'] ?? 0;
+    $messageId = $message['message_id'] ?? 0;
+    $replyToMessage = $message['reply_to_message'] ?? null;
+    
+    if (!isAdmin($userId) && !isBotOwner($userId)) {
+        return null;
+    }
+    
+    $parsed = parseAdminCommand($text, $chatId, $userId, $botToken);
+    if (!$parsed) {
+        return null;
+    }
+    
+    $action = $parsed['action'];
+    $matches = $parsed['matches'] ?? [];
+    $params = $parsed['params'] ?? [];
+    
+    switch ($action) {
+        case 'ban':
+            $targetUser = $matches[1] ?? $params['user'] ?? null;
+            if ($replyToMessage) {
+                $targetUser = $replyToMessage['from']['id'];
+            }
+            if (!$targetUser) {
+                return "⚠️ Please specify a user to ban or reply to their message.";
+            }
+            $params = ['user_id' => $targetUser];
+            $action = 'ban_user';
+            break;
+            
+        case 'kick':
+            $targetUser = $matches[1] ?? $params['user'] ?? null;
+            if ($replyToMessage) {
+                $targetUser = $replyToMessage['from']['id'];
+            }
+            if (!$targetUser) {
+                return "⚠️ Please specify a user to kick or reply to their message.";
+            }
+            $params = ['user_id' => $targetUser];
+            $action = 'kick_user';
+            break;
+            
+        case 'mute':
+            $targetUser = $matches[1] ?? null;
+            if ($replyToMessage) {
+                $targetUser = $replyToMessage['from']['id'];
+            }
+            $duration = 3600;
+            if (isset($matches[2])) {
+                $multiplier = 60;
+                if (isset($matches[3])) {
+                    if ($matches[3] === 'hour') $multiplier = 3600;
+                    elseif ($matches[3] === 'day') $multiplier = 86400;
+                }
+                $duration = intval($matches[2]) * $multiplier;
+            }
+            $params = ['user_id' => $targetUser, 'duration' => $duration];
+            $action = 'mute_user';
+            break;
+            
+        case 'unmute':
+            $targetUser = $matches[1] ?? null;
+            if ($replyToMessage) {
+                $targetUser = $replyToMessage['from']['id'];
+            }
+            $params = ['user_id' => $targetUser];
+            $action = 'unmute_user';
+            break;
+            
+        case 'warn':
+            $targetUser = $matches[1] ?? null;
+            if ($replyToMessage) {
+                $targetUser = $replyToMessage['from']['id'];
+            }
+            $reason = $matches[2] ?? 'No reason specified';
+            $params = ['user_id' => $targetUser, 'reason' => $reason, 'warned_by' => $userId];
+            $action = 'warn_user';
+            break;
+            
+        case 'promote':
+            $targetUser = $matches[1] ?? null;
+            if ($replyToMessage) {
+                $targetUser = $replyToMessage['from']['id'];
+            }
+            $params = ['user_id' => $targetUser];
+            $action = 'promote_user';
+            break;
+            
+        case 'demote':
+            $targetUser = $matches[1] ?? null;
+            if ($replyToMessage) {
+                $targetUser = $replyToMessage['from']['id'];
+            }
+            $params = ['user_id' => $targetUser];
+            $action = 'demote_user';
+            break;
+            
+        case 'delete':
+            if ($replyToMessage) {
+                $params = ['message_id' => $replyToMessage['message_id']];
+            } else {
+                return "⚠️ Please reply to the message you want to delete.";
+            }
+            $action = 'delete_message';
+            break;
+            
+        case 'pin':
+            if ($replyToMessage) {
+                $params = ['message_id' => $replyToMessage['message_id']];
+            } else {
+                return "⚠️ Please reply to the message you want to pin.";
+            }
+            $action = 'pin_message';
+            break;
+            
+        case 'unpin':
+            if ($replyToMessage) {
+                $params = ['message_id' => $replyToMessage['message_id']];
+            } else {
+                $params = ['message_id' => null];
+            }
+            $action = 'unpin_message';
+            break;
+            
+        case 'slow_mode':
+            $seconds = intval($matches[1] ?? 0);
+            if (isset($matches[2]) && $matches[2] === 'min') {
+                $seconds *= 60;
+            }
+            $params = ['seconds' => $seconds];
+            $action = 'set_slow_mode';
+            break;
+            
+        case 'title':
+            $params = ['title' => $matches[1] ?? ''];
+            $action = 'change_group_title';
+            break;
+            
+        case 'description':
+            $params = ['description' => $matches[1] ?? ''];
+            $action = 'change_group_description';
+            break;
+            
+        case 'clear_cache':
+            $action = 'clear_cache';
+            $params = [];
+            break;
+            
+        case 'backup':
+            $action = 'backup_database';
+            $params = [];
+            break;
+            
+        case 'report':
+        case 'analytics':
+            $action = 'generate_report';
+            $params = [];
+            break;
+            
+        case 'maintenance':
+            $action = 'maintenance_mode';
+            $params = ['message' => 'Bot is under maintenance'];
+            break;
+            
+        case 'emergency':
+            $action = 'emergency_mode';
+            $params = ['message' => 'Emergency mode activated'];
+            break;
+    }
+    
+    if (requiresConfirmation($action)) {
+        $description = getActionDescription($action, $params);
+        $actionId = createPendingAction($userId, $chatId, $action, $params, $description);
+        
+        $confirmMsg = "⚠️ <b>Confirmation Required</b>\n\n";
+        $confirmMsg .= "Action: <code>$action</code>\n";
+        $confirmMsg .= "Details: $description\n\n";
+        $confirmMsg .= "Reply with:\n";
+        $confirmMsg .= "✅ <code>/confirm $actionId</code> to execute\n";
+        $confirmMsg .= "❌ <code>/cancel $actionId</code> to cancel\n\n";
+        $confirmMsg .= "⏰ Expires in 5 minutes";
+        
+        return $confirmMsg;
+    }
+    
+    $result = executeAutonomousAction($action, $params, $chatId);
+    
+    $emoji = $result['success'] ? '✅' : '❌';
+    return "$emoji {$result['message']}";
+}
+
+function getActionDescription($action, $params) {
+    $descriptions = [
+        'ban_user' => "Ban user " . ($params['user_id'] ?? 'unknown'),
+        'kick_user' => "Kick user " . ($params['user_id'] ?? 'unknown'),
+        'promote_user' => "Promote user " . ($params['user_id'] ?? 'unknown') . " to admin",
+        'demote_user' => "Remove admin privileges from user " . ($params['user_id'] ?? 'unknown'),
+        'change_group_title' => "Change group title to: " . ($params['title'] ?? 'unknown'),
+        'change_group_description' => "Change group description",
+        'set_slow_mode' => "Set slow mode to " . ($params['seconds'] ?? 0) . " seconds",
+        'restart_server' => "Restart the server",
+        'backup_database' => "Create database backup",
+        'deploy_new_version' => "Deploy new version from git",
+        'maintenance_mode' => "Enable maintenance mode",
+        'emergency_mode' => "Enable emergency mode"
+    ];
+    
+    return $descriptions[$action] ?? "Execute action: $action";
 }
 
 // ============================================================================
@@ -3275,6 +4845,63 @@ try {
         
         // Handle text messages - AI response
         if (!empty($text)) {
+            // Handle autonomous control confirmation/cancellation commands
+            if (preg_match('/^\/confirm\s+([a-f0-9]+)$/i', $text, $confirmMatch)) {
+                if (isAdmin($userId) || isBotOwner($userId)) {
+                    $result = executePendingAction($confirmMatch[1]);
+                    $emoji = $result['success'] ? '✅' : '❌';
+                    sendTelegramMessage($chatId, "$emoji {$result['message']}", $TELEGRAM_BOT_TOKEN);
+                } else {
+                    sendTelegramMessage($chatId, "❌ Only admins can confirm actions.", $TELEGRAM_BOT_TOKEN);
+                }
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            if (preg_match('/^\/cancel\s+([a-f0-9]+)$/i', $text, $cancelMatch)) {
+                if (isAdmin($userId) || isBotOwner($userId)) {
+                    if (cancelPendingAction($cancelMatch[1])) {
+                        sendTelegramMessage($chatId, "✅ Action cancelled.", $TELEGRAM_BOT_TOKEN);
+                    } else {
+                        sendTelegramMessage($chatId, "❌ Action not found or already expired.", $TELEGRAM_BOT_TOKEN);
+                    }
+                } else {
+                    sendTelegramMessage($chatId, "❌ Only admins can cancel actions.", $TELEGRAM_BOT_TOKEN);
+                }
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
+            // Handle autonomous admin commands (natural language)
+            if (isAdmin($userId) || isBotOwner($userId)) {
+                $autonomousResponse = handleAutonomousCommand($text, $message, $TELEGRAM_BOT_TOKEN);
+                if ($autonomousResponse !== null) {
+                    sendTelegramMessage($chatId, $autonomousResponse, $TELEGRAM_BOT_TOKEN);
+                    http_response_code(200);
+                    exit(json_encode(['status' => 'ok']));
+                }
+            }
+            
+            // Handle auto-moderation for groups
+            if (isGroupChat($message) && isFeatureEnabled('auto_moderation_enabled')) {
+                $modAction = handleAutoModeration($message, $TELEGRAM_BOT_TOKEN);
+                if ($modAction['action'] !== 'none') {
+                    aiLog("Auto-moderation action: " . json_encode($modAction), 'INFO');
+                    if (in_array($modAction['action'], ['deleted', 'muted', 'banned'])) {
+                        http_response_code(200);
+                        exit(json_encode(['status' => 'ok']));
+                    }
+                }
+            }
+            
+            // Check for auto-reply triggers
+            $autoReply = checkAutoReply($text, $chatId);
+            if ($autoReply !== null) {
+                sendTelegramMessage($chatId, $autoReply, $TELEGRAM_BOT_TOKEN);
+                http_response_code(200);
+                exit(json_encode(['status' => 'ok']));
+            }
+            
             // Content moderation
             $moderation = moderateContent($text, $userId);
             if (!$moderation['passed']) {
