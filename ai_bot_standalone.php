@@ -251,47 +251,6 @@ function aiSaveJSON($file, $data) {
 }
 
 // ============================================================================
-// TELEGRAM API UTILITY FUNCTION
-// ============================================================================
-
-function aiTelegramApiRequest($method, $data = [], $botToken = null) {
-    global $TELEGRAM_BOT_TOKEN;
-    $botToken = $botToken ?? $TELEGRAM_BOT_TOKEN;
-    if (empty($botToken)) {
-        aiLog("aiTelegramApiRequest failed: BOT_TOKEN is not set for method $method", 'ERROR');
-        return ['success' => false, 'result' => ['description' => 'Bot token not set']];
-    }
-
-    $url = "https://api.telegram.org/bot{$botToken}/{$method}";
-    
-    $ch = curl_init();
-    curl_setopt_array($ch, [
-        CURLOPT_URL => $url,
-        CURLOPT_POST => 1,
-        CURLOPT_POSTFIELDS => json_encode($data),
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 10
-    ]);
-    
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
-    curl_close($ch);
-    
-    $result = json_decode($response, true);
-    
-    if ($httpCode !== 200 || !($result['ok'] ?? false)) {
-        $errorMsg = $result['description'] ?? $curlError ?? 'Unknown error';
-        aiLog("Telegram API Request Failed for method $method (HTTP $httpCode): $errorMsg", 'ERROR');
-        return ['success' => false, 'result' => $result, 'http_code' => $httpCode, 'curl_error' => $curlError];
-    }
-    
-    aiLog("Telegram API Request Success for method $method (HTTP $httpCode)", 'INFO');
-    return ['success' => true, 'result' => $result];
-}
-
-// ============================================================================
 // ADMIN & SECURITY FUNCTIONS
 // ============================================================================
 
@@ -671,8 +630,20 @@ function getChatMember($chatId, $userId, $botToken) {
 }
 
 function getBotInfo($botToken) {
-    $result = aiTelegramApiRequest('getMe', [], $botToken);
-    return $result;
+    $url = "https://api.telegram.org/bot{$botToken}/getMe";
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 5
+    ]);
+    
+    $response = curl_exec($ch);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return $result['result'] ?? null;
 }
 
 // ============================================================================
@@ -768,28 +739,88 @@ function cancelPendingAction($actionId) {
 // ============================================================================
 
 function banChatMember($chatId, $userId, $botToken, $untilDate = null) {
+    $url = "https://api.telegram.org/bot{$botToken}/banChatMember";
     $data = ['chat_id' => $chatId, 'user_id' => $userId];
     if ($untilDate) $data['until_date'] = $untilDate;
     
-    $result = aiTelegramApiRequest('banChatMember', $data, $botToken);
-    aiLog("banChatMember: User $userId in chat $chatId - " . ($resulfunction unbanChatMember($chatId, $userId, $botToken) {
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    aiLog("banChatMember: User $userId in chat $chatId - HTTP $httpCode", 'INFO');
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function unbanChatMember($chatId, $userId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/unbanChatMember";
     $data = ['chat_id' => $chatId, 'user_id' => $userId, 'only_if_banned' => true];
     
-    $result = aiTelegramApiRequest('unbanChatMember', $data, $botToken);
-    aiLog("unbanChatMember: User $userId in chat $chatId - " . ($result['success'] ? 'SUCCESS' : 'FAILED'), 'INFO');
-    return $result;
-}ChatMember($chatId, $userId, $botToken) {
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function kickChatMember($chatId, $userId, $botToken) {
     $ban = banChatMember($chatId, $userId, $botToken);
     if ($ban['success']) {
         sleep(1);
-        return unbanChatMember($chatId, $ufunction restrictChatMember($chatId, $userId, $botToken, $permissions, $untilDate = null) {
-    $data = ['chat_id' => $chatId, 'user_id' => $userId, 'permissions' => $permissions];
+        return unbanChatMember($chatId, $userId, $botToken);
+    }
+    return $ban;
+}
+
+function restrictChatMember($chatId, $userId, $botToken, $permissions, $untilDate = null) {
+    $url = "https://api.telegram.org/bot{$botToken}/restrictChatMember";
+    $data = [
+        'chat_id' => $chatId,
+        'user_id' => $userId,
+        'permissions' => $permissions
+    ];
     if ($untilDate) $data['until_date'] = $untilDate;
     
-    $result = aiTelegramApiRequest('restrictChatMember', $data, $botToken);
-    aiLog("restrictChatMember: User $userId in chat $chatId - " . ($result['success'] ? 'SUCCESS' : 'FAILED'), 'INFO');
-    return $result;
-}teUser($chatId, $userId, $botToken, $duration = null) {
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function muteUser($chatId, $userId, $botToken, $duration = null) {
     $permissions = [
         'can_send_messages' => false,
         'can_send_audios' => false,
@@ -825,6 +856,8 @@ function unmuteUser($chatId, $userId, $botToken) {
 }
 
 function promoteChatMember($chatId, $userId, $botToken, $permissions = []) {
+    $url = "https://api.telegram.org/bot{$botToken}/promoteChatMember";
+    
     $defaultPermissions = [
         'can_manage_chat' => true,
         'can_delete_messages' => true,
@@ -841,9 +874,23 @@ function promoteChatMember($chatId, $userId, $botToken, $permissions = []) {
     
     $data = array_merge(['chat_id' => $chatId, 'user_id' => $userId], $defaultPermissions, $permissions);
     
-    $result = aiTelegramApiRequest('promoteChatMember', $data, $botToken);
-    aiLog("promoteChatMember: User $userId in chat $chatId - " . ($result['success'] ? 'SUCCESS' : 'FAILED'), 'INFO');
-    return $result;
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    aiLog("promoteChatMember: User $userId in chat $chatId - HTTP $httpCode", 'INFO');
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
 }
 
 function demoteChatMember($chatId, $userId, $botToken) {
@@ -905,51 +952,193 @@ function getWarningThreshold($chatId) {
 
 // ============================================================================
 // AUTONOMOUS CONTROL - MESSAGE MANAGEMENT
-// ====================================function deleteMessage($chatId, $messageId, $botToken) {
-    $data = ['chat_id' => $chatId, 'message_id' => $messageId];
-    
-    $result = aiTelegramApiRequest('deleteMessage', $data, $botToken);
-    aiLog("deleteMessage: Message $messafunction pinChatMessage($chatId, $messageId, $botToken, $disableNotification = false) {
-    $data = ['chat_id' => $chatId, 'message_id' => $messageId, 'disable_notification' => $disableNotification];
-    
-    $result = aiTelegramApiRequest('pinChatMessage', $data, $botToken);
-    aiLog("pinChatMessage: Message $messageId in chat $chatId - " . ($result['sfunction unpinChatMessage($chatId, $messageId, $botToken) {
-    $data = ['chat_id' => $chatId, 'message_id' => $messageId];
-    
-    $result = aiTelegramApiRequest('unpinChatMessage', $data, $botToken);
-    aiLog("unpinChatMessage: Message $messagefunction unpinAllChatMessages($chatId, $botToken) {
-    $data = ['chat_id' => $chatId];
-    
-    $result = aiTelegramApiRequest('unpinAllChatMessages', $data, $botToken);
-    aiLog("unpinAllChatMessages: Chat $chatId - " . ($result['success'] ? 'SUCCESS' : 'FAILED'), 'INFO');
-    return $result;
-}
 // ============================================================================
-// AUTONOMOUS CONTROL - GROUP SETTINGS
-// =================function setChatTitle($chatId, $title, $botToken) {
-    $data = ['chat_id' => $chatId, 'title' => $title];
+
+function deleteMessage($chatId, $messageId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/deleteMessage";
+    $data = ['chat_id' => $chatId, 'message_id' => $messageId];
     
-    $result = aiTelegramApiRequest('setChatTitle', $data, $botToken);
-    aiLog("setChatTitle: Chat $chatId to '$title' - " . ($result['success'] ? 'SUCCESS' : 'FAILED'), 'INfunction setChatDescription($chatId, $description, $botToken) {
-    $data = ['chat_id' => $chatId, 'description' => $description];
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
     
-    $result = aiTelegramApiRequest('setChatDescription', $data, $botToken);
-    aiLog("setChatDescripfunction setChatPermissions($chatId, $permissions, $botToken) {
-    $data = ['chat_id' => $chatId, 'permissions' => $permissions];
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
     
-    $result = aiTelegramApiRequest('setChatPermissions', $data, $botToken);
-    aiLog("setChatPermissions: Chat $chatId - " . ($result['success'] ? 'SUCCESS' : 'FAILED'), 'INFO');
-    return $result;
-}
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
 }
 
-function setSlfunction setChatSlowModeDelay($chatId, $seconds, $botToken) {
+function pinChatMessage($chatId, $messageId, $botToken, $disableNotification = false) {
+    $url = "https://api.telegram.org/bot{$botToken}/pinChatMessage";
+    $data = [
+        'chat_id' => $chatId,
+        'message_id' => $messageId,
+        'disable_notification' => $disableNotification
+    ];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function unpinChatMessage($chatId, $messageId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/unpinChatMessage";
+    $data = ['chat_id' => $chatId, 'message_id' => $messageId];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function unpinAllChatMessages($chatId, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/unpinAllChatMessages";
+    $data = ['chat_id' => $chatId];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+// ============================================================================
+// AUTONOMOUS CONTROL - GROUP SETTINGS
+// ============================================================================
+
+function setChatTitle($chatId, $title, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/setChatTitle";
+    $data = ['chat_id' => $chatId, 'title' => substr($title, 0, 128)];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function setChatDescription($chatId, $description, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/setChatDescription";
+    $data = ['chat_id' => $chatId, 'description' => substr($description, 0, 255)];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function setChatPermissions($chatId, $permissions, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/setChatPermissions";
+    $data = ['chat_id' => $chatId, 'permissions' => $permissions];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
+
+function setSlowMode($chatId, $seconds, $botToken) {
+    $url = "https://api.telegram.org/bot{$botToken}/setChatSlowModeDelay";
+    $validSeconds = [0, 10, 30, 60, 300, 900, 3600];
+    $seconds = in_array($seconds, $validSeconds) ? $seconds : 0;
     $data = ['chat_id' => $chatId, 'slow_mode_delay' => $seconds];
     
-    $result = aiTelegramApiRequest('setChatSlowModeDelay', $data, $botToken);
-    aiLog("setChatSlowModeDelay: Chat $chatId to $seconds seconds - " . ($result['success'] ? 'SUCCESS' : 'FAILED'), 'INFO');
-    return $result;
-}}
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => 1,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 10
+    ]);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    $result = json_decode($response, true);
+    return ['success' => $httpCode === 200 && ($result['ok'] ?? false), 'result' => $result];
+}
 
 function getChatInfo($chatId, $botToken) {
     $url = "https://api.telegram.org/bot{$botToken}/getChat";
@@ -3548,196 +3737,6 @@ function logSystemMetrics() {
 }
 
 // ============================================================================
-// TELEGRAM BOT INFO CACHE
-// ============================================================================
-
-function getBotUsername($botToken) {
-    static $usernameCache = [];
-    if (isset($usernameCache[$botToken])) {
-        return $usernameCache[$botToken];
-    }
-
-    $info = getBotInfo($botToken);
-    $username = $info['result']['username'] ?? '';
-    
-    if (!empty($username)) {
-        $usernameCache[$botToken] = $username;
-    }
-    
-    return $username;
-}
-
-// ============================================================================
-// ADMIN COMMAND HANDLER
-// ============================================================================
-
-function handleAdminCommand($update, $chatId, $userId, $text, $botToken) {
-    // Check if the user is an admin
-    if (!isAdmin($userId)) {
-        sendTelegramMessage($chatId, "🚫 Access Denied. You must be an admin to use this command.", $botToken);
-        return true; // Command handled (denied)
-    }
-
-    $parts = explode(' ', $text);
-    $command = strtolower(str_replace('@' . getBotUsername($botToken), '', $parts[0]));
-    $args = array_slice($parts, 1);
-    $response = '';
-    $targetUserId = null;
-    $targetChatId = $chatId;
-    $replyToMessageId = $update['message']['reply_to_message']['message_id'] ?? null;
-    
-    // Try to get target user ID from arguments or reply
-    if (count($args) > 0 && is_numeric($args[0])) {
-        $targetUserId = (int)$args[0];
-        $args = array_slice($args, 1);
-    } elseif ($replyToMessageId && isset($update['message']['reply_to_message']['from']['id'])) {
-        $targetUserId = (int)$update['message']['reply_to_message']['from']['id'];
-    }
-
-    // --- Member Management Commands ---
-    switch ($command) {
-        case '/ban':
-            if (!$targetUserId) {
-                $response = "Usage: /ban [user_id] or reply to a user's message.";
-                break;
-            }
-            $result = banChatMember($targetChatId, $targetUserId, $botToken);
-            $response = $result['success'] ? "✅ User $targetUserId has been banned." : "❌ Failed to ban user $targetUserId: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        case '/unban':
-            if (!$targetUserId) {
-                $response = "Usage: /unban [user_id] or reply to a user's message.";
-                break;
-            }
-            $result = unbanChatMember($targetChatId, $targetUserId, $botToken);
-            $response = $result['success'] ? "✅ User $targetUserId has been unbanned." : "❌ Failed to unban user $targetUserId: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        case '/mute':
-            if (!$targetUserId) {
-                $response = "Usage: /mute [user_id] [duration_in_seconds] or reply to a user's message.";
-                break;
-            }
-            $duration = (int)($args[0] ?? 0);
-            $untilDate = $duration > 0 ? time() + $duration : null;
-            $result = muteUser($targetChatId, $targetUserId, $botToken, $untilDate);
-            $response = $result['success'] ? "✅ User $targetUserId has been muted for " . ($duration > 0 ? "$duration seconds." : "permanently.") : "❌ Failed to mute user $targetUserId: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-            
-        case '/unmute':
-            if (!$targetUserId) {
-                $response = "Usage: /unmute [user_id] or reply to a user's message.";
-                break;
-            }
-            $result = unmuteUser($targetChatId, $targetUserId, $botToken);
-            $response = $result['success'] ? "✅ User $targetUserId has been unmuted." : "❌ Failed to unmute user $targetUserId: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        case '/promote':
-            if (!$targetUserId) {
-                $response = "Usage: /promote [user_id] or reply to a user's message. (Promotes to a standard admin)";
-                break;
-            }
-            // Promote to a standard admin with basic rights
-            $permissions = [
-                'can_change_info' => true,
-                'can_delete_messages' => true,
-                'can_invite_users' => true,
-                'can_restrict_members' => true,
-                'can_pin_messages' => true,
-                'can_promote_members' => false // Cannot promote others
-            ];
-            $result = promoteChatMember($targetChatId, $targetUserId, $botToken, $permissions);
-            $response = $result['success'] ? "✅ User $targetUserId has been promoted to a standard admin." : "❌ Failed to promote user $targetUserId: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        case '/demote':
-            if (!$targetUserId) {
-                $response = "Usage: /demote [user_id] or reply to a user's message.";
-                break;
-            }
-            $result = demoteChatMember($targetChatId, $targetUserId, $botToken);
-            $response = $result['success'] ? "✅ User $targetUserId has been demoted." : "❌ Failed to demote user $targetUserId: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        // --- Message Management Commands ---
-        case '/del':
-        case '/delete':
-            if (!$replyToMessageId) {
-                $response = "Usage: Reply to the message you want to delete with /del or /delete.";
-                break;
-            }
-            $result = deleteMessage($targetChatId, $replyToMessageId, $botToken);
-            $response = $result['success'] ? "✅ Message deleted." : "❌ Failed to delete message: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        case '/pin':
-            if (!$replyToMessageId) {
-                $response = "Usage: Reply to the message you want to pin with /pin.";
-                break;
-            }
-            $result = pinChatMessage($targetChatId, $replyToMessageId, $botToken);
-            $response = $result['success'] ? "✅ Message pinned." : "❌ Failed to pin message: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        case '/unpin':
-            if (!$replyToMessageId) {
-                $response = "Usage: Reply to the message you want to unpin with /unpin, or use /unpinall.";
-                break;
-            }
-            $result = unpinChatMessage($targetChatId, $replyToMessageId, $botToken);
-            $response = $result['success'] ? "✅ Message unpinned." : "❌ Failed to unpin message: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        case '/unpinall':
-            $result = unpinAllChatMessages($targetChatId, $botToken);
-            $response = $result['success'] ? "✅ All messages unpinned." : "❌ Failed to unpin all messages: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        // --- Group Settings Commands ---
-        case '/settitle':
-            $newTitle = implode(' ', $args);
-            if (empty($newTitle)) {
-                $response = "Usage: /settitle [New Group Title]";
-                break;
-            }
-            $result = setChatTitle($targetChatId, $newTitle, $botToken);
-            $response = $result['success'] ? "✅ Group title set to: <b>" . htmlspecialchars($newTitle) . "</b>" : "❌ Failed to set title: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        case '/setdesc':
-            $newDescription = implode(' ', $args);
-            if (empty($newDescription)) {
-                $response = "Usage: /setdesc [New Group Description]";
-                break;
-            }
-            $result = setChatDescription($targetChatId, $newDescription, $botToken);
-            $response = $result['success'] ? "✅ Group description set." : "❌ Failed to set description: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        case '/slowmode':
-            $delay = (int)($args[0] ?? 0);
-            if ($delay < 0 || $delay > 3600) {
-                $response = "Usage: /slowmode [delay_in_seconds]. Delay must be between 0 and 3600.";
-                break;
-            }
-            $result = setChatSlowModeDelay($targetChatId, $delay, $botToken);
-            $response = $result['success'] ? "✅ Slow mode set to $delay seconds." : "❌ Failed to set slow mode: " . ($result['result']['description'] ?? 'Unknown error');
-            break;
-
-        default:
-            return false; // Not an admin command
-    }
-
-    if (!empty($response)) {
-        sendTelegramMessage($chatId, $response, $botToken, 'HTML');
-    }
-    
-    return true; // Admin command was processed
-}
-
-// ============================================================================
 // WEBHOOK HANDLER - MAIN LOGIC
 // ============================================================================
 
@@ -4873,14 +4872,6 @@ try {
                 exit(json_encode(['status' => 'ok']));
             }
             
-            // Handle explicit admin /commands (e.g., /ban, /pin)
-            if (strpos($text, '/') === 0) {
-                if (handleAdminCommand($update, $chatId, $userId, $text, $TELEGRAM_BOT_TOKEN)) {
-                    http_response_code(200);
-                    exit(json_encode(['status' => 'ok']));
-                }
-            }
-
             // Handle autonomous admin commands (natural language)
             if (isAdmin($userId) || isBotOwner($userId)) {
                 $autonomousResponse = handleAutonomousCommand($text, $message, $TELEGRAM_BOT_TOKEN);
