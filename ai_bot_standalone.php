@@ -1837,7 +1837,11 @@ function parseAdminCommand($text, $chatId, $userId, $botToken) {
 }
 
 function askGeminiSimple($prompt, $apiKey) {
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={$apiKey}";
+    // Inject current date context
+    $currentDate = date('F j, Y');
+    $prompt = "Current Date: $currentDate\n\n" . $prompt;
+    
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={$apiKey}";
     $data = ['contents' => [['parts' => [['text' => $prompt]]]]];
     
     $ch = curl_init();
@@ -2564,8 +2568,8 @@ function translateText($text, $targetLanguage, $apiKey) {
     
     $prompt = "Translate the following text to $targetLanguage. Only provide the translation, no explanations or additional text:\n\n$text";
     
-    // Use working Gemini 2.5 model
-    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={$apiKey}";
+    // Use the latest and most capable Gemini 2.0 Flash model
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={$apiKey}";
     $data = ['contents' => [['parts' => [['text' => $prompt]]]]];
     
     $ch = curl_init();
@@ -3328,16 +3332,20 @@ function tryGeminiAPI($prompt, $context = '', $imageBase64 = null, $imageMimeTyp
     $complexity = analyzeQuestionComplexity($prompt, $context);
     $lengthGuidance = getResponseLengthGuidance($complexity);
     
-    $fullPrompt = $context ? "$context\n\nUser: $prompt" : $prompt;
+    // Inject current date context to ensure AI is up to date
+    $currentDate = date('F j, Y, H:i:s e');
+    $timeContext = "Current Date and Time: $currentDate\nYear: " . date('Y') . "\n";
+    
+    $fullPrompt = $timeContext . ($context ? "$context\n\nUser: $prompt" : $prompt);
     $fullPrompt .= "\n\n[SYSTEM INSTRUCTION] $lengthGuidance";
     
     // USE ONLY THE MODELS FROM YOUR GOOGLE AI STUDIO
     if ($imageBase64 && $imageMimeType) {
         // For images: use multimodal models
-        $models = ['gemini-2.5-flash-tts', 'gemini-2.5-flash'];
+        $models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
     } else {
-        // For text: use the first 3 working models from your dashboard
-        $models = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-tts'];
+        // For text: use latest models
+        $models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
     }
     
     foreach ($models as $model) {
